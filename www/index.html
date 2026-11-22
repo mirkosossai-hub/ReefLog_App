@@ -683,7 +683,7 @@ function render(){
 function vHome(){
   const lt = S.tests.length? Math.max(...S.tests.map(t=>t.ts)) : null;
   let h='';
-  if(!S.settings.welcomed && !S.tests.length){
+  if(!S.settings.welcomed && !(S.tests.length||S.doses.length||S.events.length||S.tasks.length||S.livestock.length||S.photos.length)){
     h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
       <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
@@ -1233,7 +1233,7 @@ document.getElementById('fileIn').onchange=async e=>{
   for(const c of ['tests','doses','events','tasks','livestock']) for(const it of (j[c]||[])){ if(it&&it.id&&(c==='tasks'||c==='livestock'||isFinite(it.ts))){ if(S.mode==='db'){ try{ await base.collection(c).doc(String(it.id)).set(it); n++ }catch(err){ handleErr(err); return } } else { const a=S[c]; const i=a.findIndex(x=>x.id===it.id); if(i>=0)a[i]=it; else a.push(it); n++ } } }
   let np=0; if(Array.isArray(j.photos)) for(const p of j.photos){ try{ if(!p||!p.id||!p.data) continue; const blob=await (await fetch(p.data)).blob(); await putPhoto({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null,blob}); np++ }catch(err){} }
   if(np){ await loadPhotos(); n+=np }
-  if(j.settings){ S.settings=Object.assign(clone(DEF_SETTINGS),j.settings); await saveSettings() }
+  S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||S.settings,{welcomed:true}); await saveSettings();
   if(S.mode==='local') lsSave();
   snoozeBackup();
   if(sbUser) enqueueAll();
