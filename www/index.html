@@ -81,7 +81,8 @@ canvas{max-width:100%}
 .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .pgrid .ph{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;background:#0a1a24;border:2px solid transparent;padding:0}
 .pgrid .ph img{width:100%;height:100%;object-fit:cover;display:block}
-.pgrid .ph span{position:absolute;left:0;right:0;bottom:0;font-size:10px;padding:3px 5px;background:linear-gradient(0deg,#000a,#0000);color:#fff;text-align:left}
+.pgrid .ph span{position:absolute;left:0;right:0;bottom:0;font-size:10px;line-height:1.3;padding:14px 5px 4px;background:linear-gradient(0deg,#000d 55%,#0000);color:#fff;text-align:left}
+.pgrid .ph span em{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-style:normal;font-size:11px}
 .pgrid .ph.sel{border-color:var(--acc)}
 .pgrid .ph b{position:absolute;top:4px;right:4px;background:var(--acc);color:#04222a;border-radius:50%;width:20px;height:20px;font-size:12px;display:flex;align-items:center;justify-content:center}
 .ov{position:fixed;inset:0;z-index:20;background:#03080c;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 10px)}
@@ -418,7 +419,7 @@ function vFoto(){
   h+=`<div class="card">`;
   const groups={}; for(const p of S.photos){ const m=new Date(p.ts).toLocaleDateString('it-IT',{month:'long',year:'numeric'}); (groups[m]=groups[m]||[]).push(p) }
   for(const m in groups){ h+=`<h2 style="margin-top:6px">${m}</h2><div class="pgrid" style="margin-bottom:10px">`;
-    for(const p of groups[m]){ const i=sel?sel.indexOf(p.id):-1; h+=`<button class="ph ${i>=0?'sel':''}" data-ph="${p.id}"><img src="${p.thumb}" alt=""><span>${fdate(p.ts)}${dayLabel(p.ts)?' · '+dayLabel(p.ts):''}</span>${i>=0?`<b>${i+1}</b>`:''}</button>` }
+    for(const p of groups[m]){ const i=sel?sel.indexOf(p.id):-1; h+=`<button class="ph ${i>=0?'sel':''}" data-ph="${p.id}"><img src="${p.thumb}" alt=""><span><em><strong>${fdate(p.ts)}</strong>${p.note?' · '+esc(p.note):(dayLabel(p.ts)?' · '+dayLabel(p.ts):'')}</em></span>${i>=0?`<b>${i+1}</b>`:''}</button>` }
     h+=`</div>` }
   return h+`</div>`;
 }
