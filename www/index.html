@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Reef Log</title>
+<meta name="theme-color" content="#07131c">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="chart.umd.min.js"></script>
+<style>
+:root{--bg:#07131c;--card:#0f2230;--card2:#14303f;--line:#1f4153;--tx:#e6f1f6;--mut:#8aa7b6;--acc:#2ec4d6;--ok:#3fcf8e;--warn:#f4b942;--bad:#ef5d5d;--ca:#5aa9ff;--kh:#f08c3a;--mg:#b07cf2}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#07131c 70%,#07131c00);padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;display:flex;align-items:center;gap:10px}
+header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px}
+header .sub{color:var(--mut);font-size:12px;margin-left:auto;text-align:right}
+main{padding:0 12px calc(88px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto}
+nav{position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;background:#0b1b26;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:var(--mut);padding:9px 0 8px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8}
+nav button.on{color:var(--acc)}
+nav{justify-content:center}nav button{max-width:144px}
+nav button.plus span{display:flex;align-items:center;justify-content:center;width:50px;height:50px;border-radius:50%;background:var(--acc);margin-top:-22px;box-shadow:0 4px 14px #0008;border:4px solid #0b1b26}
+nav button.plus svg{stroke:#04222a;stroke-width:2.6;width:24px;height:24px}
+#sheet{position:fixed;inset:0;z-index:15;background:#000a;display:flex;align-items:center;justify-content:center;padding:16px}
+#sheet.hide{display:none}
+#sheet .pane{background:var(--card);border:1px solid var(--line);border-radius:18px;width:100%;max-width:440px;padding:16px;box-shadow:0 12px 40px #000a;animation:pop .15s ease-out}
+@keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
+#sheet .acts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+#sheet .acts button{background:var(--card2);border:1px solid var(--line);border-radius:14px;color:var(--tx);padding:12px 4px;font:inherit;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:6px}
+#sheet .acts button i{font-style:normal;font-size:24px}
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:3px;margin:10px 0}
+.seg button{flex:1;background:none;border:0;color:var(--mut);padding:8px 4px;border-radius:9px;font:inherit;font-size:14px}
+.seg button.on{background:var(--acc);color:#04222a;font-weight:700}
+.mitem{display:flex;align-items:center;gap:12px;padding:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;margin:8px 0;cursor:pointer}
+.mitem i{font-style:normal;font-size:22px;width:40px;height:40px;border-radius:11px;background:var(--card2);display:flex;align-items:center;justify-content:center;flex:none}
+.mitem .t{flex:1}.mitem .t b{display:block}.mitem .t span{font-size:12px;color:var(--mut)}
+.back{display:flex;align-items:center;gap:8px;margin:6px 0 2px}
+.back button{background:none;border:0;color:var(--acc);font:inherit;font-size:15px;padding:6px 0}
+.back h1{font-size:18px;margin:0 0 0 auto;font-weight:700}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+.tile{background:var(--card2);border-radius:11px;padding:9px 10px;border-left:4px solid var(--line)}
+.tile .k{font-size:12px;color:var(--mut)}
+.tile .v{font-size:21px;font-weight:700;margin-top:1px}
+.tile .v small{font-size:11px;color:var(--mut);font-weight:500}
+.tile .d{font-size:11px;color:var(--mut)}
+.s-ok{border-left-color:var(--ok)}.s-warn{border-left-color:var(--warn)}.s-bad{border-left-color:var(--bad)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.f{display:flex;flex-direction:column;gap:3px;flex:1;min-width:92px}
+.f label{font-size:12px;color:var(--mut)}
+input,select,textarea{background:#0a1a24;border:1px solid var(--line);color:var(--tx);border-radius:9px;padding:9px 10px;font:inherit;width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc)}
+textarea{min-height:60px;resize:vertical}
+.btn{background:var(--acc);color:#04222a;border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:700}
+.btn.sec{background:var(--card2);color:var(--tx);border:1px solid var(--line);font-weight:600}
+.btn.sm{padding:6px 10px;font-size:13px}
+.btn.danger{background:#3a1717;color:#ffb4b4;border:1px solid #5a2323}
+.btn:disabled{opacity:.5}
+.list .it{display:flex;gap:10px;padding:10px 0;border-top:1px solid var(--line);align-items:flex-start}
+.list .it:first-child{border-top:0}
+.it .when{min-width:58px;color:var(--mut);font-size:12px}
+.it .body{flex:1;font-size:14px}
+.it .acts{display:flex;gap:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{background:var(--card2);border:1px solid var(--line);color:var(--tx);border-radius:999px;padding:6px 12px;font-size:13px}
+.chip.on{background:var(--acc);color:#04222a;border-color:var(--acc);font-weight:700}
+.mut{color:var(--mut)}.small{font-size:12px}
+.banner{background:#33270b;border:1px solid #6b5212;color:#ffd98a;border-radius:10px;padding:9px 12px;font-size:13px;margin:8px 0}
+.tri{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:6px 10px;font-size:13px;align-items:center}
+.tri .h{color:var(--mut);font-size:11px;text-transform:uppercase}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px}
+.big{font-size:16px;font-weight:700}
+.toast{z-index:30!important;position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));background:#e6f1f6;color:#07131c;padding:9px 16px;border-radius:999px;font-size:14px;font-weight:600;z-index:9;opacity:0;transition:.25s;pointer-events:none}
+.toast.on{opacity:1}
+canvas{max-width:100%}
+.hide{display:none!important}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pgrid .ph{position:relative;aspect-ratio:1;border-radius:9px;overflow:hidden;background:#0a1a24;border:2px solid transparent;padding:0}
+.pgrid .ph img{width:100%;height:100%;object-fit:cover;display:block}
+.pgrid .ph span{position:absolute;left:0;right:0;bottom:0;font-size:10px;padding:3px 5px;background:linear-gradient(0deg,#000a,#0000);color:#fff;text-align:left}
+.pgrid .ph.sel{border-color:var(--acc)}
+.pgrid .ph b{position:absolute;top:4px;right:4px;background:var(--acc);color:#04222a;border-radius:50%;width:20px;height:20px;font-size:12px;display:flex;align-items:center;justify-content:center}
+.ov{position:fixed;inset:0;z-index:20;background:#03080c;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 10px)}
+.ov .top{display:flex;align-items:center;gap:8px;color:#fff;padding:4px 2px 8px}
+.ov .stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;min-height:0}
+.ov .stage img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px}
+.ov .cmp{position:relative;max-width:100%;max-height:100%}
+.ov .cmp img{display:block;max-width:100%;max-height:70vh}
+.ov .cmp .b{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ov .cmp .line{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 6px #000}
+.ov .lbl{position:absolute;top:6px;font-size:11px;background:#0009;color:#fff;padding:2px 7px;border-radius:999px}
+.ov .nav{position:absolute;top:50%;transform:translateY(-50%);background:#0007;color:#fff;border:0;border-radius:50%;width:42px;height:42px;font-size:22px}
+.tag{font-size:11px;padding:2px 7px;border-radius:999px;background:var(--card2);color:var(--mut);border:1px solid var(--line)}
+details summary{cursor:pointer;color:var(--acc);font-size:14px;margin:4px 0}
+hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+</style>
+</head>
+<body>
+<header>
+  <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2ec4d6" stroke-width="1.8"><path d="M3 18c3-2 6 2 9 0s6 2 9 0"/><path d="M8 15V9a2 2 0 1 1 4 0v6M12 12V6a2 2 0 1 1 4 0v9"/></svg>
+  <h1>Reef Log</h1>
+  <div class="sub" id="hdrSub"></div>
+</header>
+<main id="app"></main>
+<nav id="nav">
+  <button data-v="home" class="on"><svg viewBox="0 0 24 24"><path d="M3 11 12 4l9 7v9H3z"/></svg>Home</button>
+  <button data-v="param"><svg viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L5 19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2l-5-10V3"/></svg>Parametri</button>
+  <button data-v="plus" class="plus" aria-label="Aggiungi"><span><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span></button>
+  <button data-v="vasca"><svg viewBox="0 0 24 24"><path d="M3 12c3-4 7-5 11-2l4-3v10l-4-3c-4 3-8 2-11-2z"/><circle cx="8" cy="11" r=".8"/></svg>Vasca</button>
+  <button data-v="menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menu</button>
+</nav>
+<div id="sheet" class="hide"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="fileIn" accept="application/json,.json" class="hide">
+<input type="file" id="photoIn" accept="image/*" multiple class="hide">
+<input type="file" id="lvPhotoIn" accept="image/*" class="hide">
+<div id="ov" class="ov hide"></div>
+
+<script>
+"use strict";
+const LOCAL_ONLY=/*LOCAL_ONLY*/true; // true nella versione app Android (nessuna sincronizzazione online)
+const CAP=()=>window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()?window.Capacitor:null;
+/* ---------- Parametri ---------- */
+const P = {
+  kh:  {n:'KH',        u:'dKH', d:2, t:[7.5,9]},
+  ca:  {n:'Calcio',    u:'ppm', d:0, t:[400,450]},
+  mg:  {n:'Magnesio',  u:'ppm', d:0, t:[1250,1400]},
+  no3: {n:'Nitrati',   u:'ppm', d:1, t:[2,10]},
+  po4: {n:'Fosfati',   u:'ppm', d:3, t:[0.03,0.1]},
+  den: {n:'Densità',   u:'',    d:3, t:[1.024,1.026]},
+  ph:  {n:'pH',        u:'',    d:2, t:[7.9,8.4]},
+  temp:{n:'Temp.',     u:'°C',  d:1, t:[24,26.5]},
+  k:   {n:'Potassio',  u:'ppm', d:0, t:[380,420]},
+  nh4: {n:'Ammoniaca', u:'ppm', d:2, t:[0,0.05]},
+  no2: {n:'Nitriti',   u:'ppm', d:2, t:[0,0.05]},
+};
+const TRI = ['ca','kh','mg'];
+const TRI_COL = {ca:'#5aa9ff',kh:'#f08c3a',mg:'#b07cf2'};
+const DAY = 86400000;
+const DEF_SETTINGS = {
+  volume: 50,
+  mode: 'balling',
+  aio: {ca:'', kh:'', mg:''},
+  conc: {ca:19.5, kh:1.0, mg:''},
+  salt: {ca:'', kh:'', mg:''},
+  targets: {},
+  showParams: ['kh','ca','mg','no3','po4','den','ph','temp'],
+  startDate: '', startDays: 28, bacterPer250: 5, bactName: 'Bacter Mix + Bacter Nitrix', tdsMax: 3,
+};
+
+/* ---------- Stato ---------- */
+const S = {tests:[], doses:[], events:[], tasks:[], livestock:[], lvPhotos:{}, settings:clone(DEF_SETTINGS), mode:'local', ready:false, stale:false};
+let editTask = null, doneOpen = null;
+let view = 'home', editTest = null, grafParam = 'kh', grafRange = 90, confirmKey = null;
+const charts = {};
+
+function clone(o){return JSON.parse(JSON.stringify(o))}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function num(v){ if(v===''||v==null) return null; const n = typeof v==='number'?v:parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null }
+function fmt(v,d){ if(v==null||!isFinite(v)) return '–'; return v.toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:d}) }
+function fdate(ts,y){ return new Date(ts).toLocaleDateString('it-IT',y?{day:'2-digit',month:'short',year:'2-digit'}:{day:'2-digit',month:'short'}) }
+function ftime(ts){ return new Date(ts).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) }
+function toInput(ts){ const d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16) }
+function fromInput(s){ const t = new Date(s).getTime(); return isFinite(t)?t:Date.now() }
+function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+function tgt(p){ const t=S.settings.targets?.[p]; return (t&&t.length===2&&num(t[0])!=null&&num(t[1])!=null)?[num(t[0]),num(t[1])]:P[p].t }
+function vol(){ return num(S.settings.volume)||50 }
+function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),1900) }
+const byTs = (a,b)=>a.ts-b.ts;
+
+/* ---------- Storage (db del Claude artifact, fallback locale) ---------- */
+let DB=null, UID=null, base=null;
+const LS_KEY='reeflog.v1';
+function lastBackup(){ try{ return +localStorage.getItem('reeflog.lastBackup')||0 }catch(e){ return 0 } }
+function snoozeBackup(){ try{ localStorage.setItem('reeflog.lastBackup',Date.now()) }catch(e){} }
+function backupDue(){ return (S.tests.length+S.doses.length+S.events.length)>0 && Date.now()-lastBackup()>14*DAY }
+function lsLoad(){ try{ const j=JSON.parse(localStorage.getItem(LS_KEY)||'null'); if(j){ S.tests=j.tests||[]; S.doses=j.doses||[]; S.events=j.events||[]; S.tasks=j.tasks||[]; S.livestock=j.livestock||[]; S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||{}) } }catch(e){} }
+function lsSave(){ try{ localStorage.setItem(LS_KEY,JSON.stringify({tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings})) }catch(e){} }
+
+async function saveItem(coll,item){
+  if(S.mode==='db'){
+    try{ await base.collection(coll).doc(item.id).set(item) }
+    catch(e){ handleErr(e); return false }
+  }else{
+    const arr=S[coll]; const i=arr.findIndex(x=>x.id===item.id); if(i>=0) arr[i]=item; else arr.push(item); lsSave(); enqueue(coll,item.id,'put'); render();
+  }
+  return true;
+}
+async function delItem(coll,id){
+  if(S.mode==='db'){ try{ await base.collection(coll).doc(id).delete() }catch(e){ handleErr(e) } }
+  else{ S[coll]=S[coll].filter(x=>x.id!==id); lsSave(); enqueue(coll,id,'del'); render() }
+}
+async function saveSettings(){
+  if(S.mode==='db'){ try{ await DB.doc(`data/users/${UID}/settings`).set(clone(S.settings)) }catch(e){ handleErr(e); return } }
+  else{ lsSave(); enqueue('settings','main','put') }
+  render();
+}
+function handleErr(e){
+  const c=e&&e.code;
+  if(c==='quota_exceeded') toast('Spazio dati esaurito: esporta un backup');
+  else if(c==='unavailable') toast('Connessione assente, riprova');
+  else toast('Salvataggio non riuscito');
+}
+
+async function initStore(){
+  lsLoad(); S.ready=true; render();
+  try{
+    if(!window.claude||!window.claude.use) return;
+    const [db,user]=await Promise.all([window.claude.use('db'),window.claude.use('user')]);
+    const id = user ? await user.id() : null;
+    if(!db||!id){ render(); return }
+    DB=db; UID=id; base=db.doc(`data/users/${id}/main`); S.mode='db';
+    S.tests=[];S.doses=[];S.events=[];S.tasks=[];S.livestock=[];S.settings=clone(DEF_SETTINGS); S.stale=true;
+    const pending=new Set(['tests','doses','events','tasks','livestock','settings']);
+    const timer=setTimeout(()=>{ if(pending.size){ S.stale=true; toast('Dati non ancora raggiungibili…'); render() } },10000);
+    const done=(k,snap)=>{ if(!snap.metadata.fromCache){ pending.delete(k); if(!pending.size){ clearTimeout(timer); S.stale=false } } };
+    for(const c of ['tests','doses','events','tasks','livestock']){
+      base.collection(c).onSnapshot(snap=>{ S[c]=snap.docs.map(d=>clone(d.data())); done(c,snap); scheduleRender() },
+        e=>{ pending.delete(c); handleErr(e) });
+    }
+    db.doc(`data/users/${id}/settings`).onSnapshot(snap=>{
+      if(snap.exists) S.settings=Object.assign(clone(DEF_SETTINGS),clone(snap.data()));
+      done('settings',snap); scheduleRender()
+    },e=>{ pending.delete('settings'); handleErr(e) });
+    render();
+  }catch(e){ render() }
+}
+let _rq=false; function scheduleRender(){ if(_rq) return; _rq=true; requestAnimationFrame(()=>{ _rq=false; if(!isTyping()) render(); else _pendingRender=true }) }
+let _pendingRender=false;
+function isTyping(){ const a=document.activeElement; return a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT') && a.closest('form') }
+document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(_pendingRender && !isTyping()){ _pendingRender=false; render() } },50) });
+
+/* ---------- Calcoli triade ---------- */
+function isAIO(){ return S.settings.mode==='aio' }
+function ballEff(p){ // aumento del parametro (unità parametro · L) per ml di soluzione Balling
+  const c=num(S.settings.conc?.[p]); if(c==null||c<=0) return null;
+  return p==='kh' ? c*2.8 : c; // KH: meq/ml → dKH·L (1 meq/L = 2,8 dKH)
+}
+function aioEff(p){ // AIO: "1 ml in 100 L alza di X" → X·100 (unità·L per ml)
+  const c=num(S.settings.aio?.[p]); if(c==null||c<=0) return null; return c*100;
+}
+function effPerMl(p){ return isAIO()? aioEff(p) : ballEff(p) }
+function testsWith(p){ return S.tests.filter(t=>num(t.v?.[p])!=null).sort(byTs) }
+function regimens(){ return [...S.doses].sort(byTs) }
+function curReg(ts){ let r=null; for(const d of regimens()){ if(d.ts<=ts) r=d; else break } return r }
+// ml/g del prodotto che fornisce p secondo la modalità attuale
+function rateAt(p,ts){ const r=curReg(ts); if(!r) return 0; if(isAIO()) return r.kind==='aio'?(num(r.aio)||0):0; return r.kind==='aio'?0:(num(r[p])||0) }
+// effetto di un record (regime → per giorno, evento → totale) sul parametro p; null se manca la concentrazione
+function recEffect(rec,p){
+  if(rec.kind==='aio'){ const ml=num(rec.aio)||0; if(!ml) return {ml:0,eff:0}; const e=aioEff(p); return {ml,eff:e==null?null:ml*e} }
+  const ml=num(rec[p])||0; if(!ml) return {ml:0,eff:0}; const e=ballEff(p); return {ml,eff:e==null?null:ml*e};
+}
+function addedBetween(p,t1,t2){ // ritorna {ml, add (unità·L) | null}
+  const R=regimens(); let ml=0, add=0, ok=true;
+  for(let i=0;i<R.length;i++){
+    const s=R[i].ts, e=i+1<R.length?R[i+1].ts:Infinity;
+    const ov=Math.min(e,t2)-Math.max(s,t1);
+    if(ov>0){ const r=recEffect(R[i],p); ml+=r.ml*ov/DAY; if(r.eff==null) ok=false; else add+=r.eff*ov/DAY }
+  }
+  for(const ev of S.events) if(ev.type==='dose' && ev.ts>t1 && ev.ts<=t2){ const r=recEffect(ev,p); ml+=r.ml; if(r.eff==null) ok=false; else add+=r.eff }
+  return {ml, add: ok?add:null};
+}
+function intervals(p){
+  const T=testsWith(p), V=vol(), out=[];
+  for(let i=1;i<T.length;i++){
+    const a=T[i-1], b=T[i], days=(b.ts-a.ts)/DAY; if(days<0.25) continue;
+    const c1=num(a.v[p]), c2=num(b.v[p]);
+    const ab=addedBetween(p,a.ts,b.ts), ml=ab.ml;
+    const added = ab.add!=null ? ab.add/V : null;
+    let wc=0; const sn=num(S.settings.salt?.[p]);
+    for(const ev of S.events){
+      if(ev.type!=='wc'||!(ev.ts>a.ts&&ev.ts<=b.ts)) continue;
+      const L=num(ev.liters); if(!L) continue;
+      if(sn!=null){ const ci=c1+(c2-c1)*(ev.ts-a.ts)/(b.ts-a.ts); wc+=(L/V)*(sn-ci) }
+    }
+    const cons = added!=null ? (c1+added+wc-c2)/days : null;
+    out.push({t1:a.ts,t2:b.ts,days,c1,c2,ml,added,wc,cons,mid:(a.ts+b.ts)/2});
+  }
+  return out;
+}
+function avgCons(p,daysBack=30){
+  const I=intervals(p).filter(x=>x.cons!=null); if(!I.length) return null;
+  const last=I[I.length-1].t2, from=last-daysBack*DAY;
+  let w=0,s=0; for(const x of I){ const ov=Math.min(x.t2,last)-Math.max(x.t1,from); if(ov>0){ s+=x.cons*ov; w+=ov } }
+  return w? s/w : I[I.length-1].cons;
+}
+function lastVal(p){ const T=testsWith(p); return T.length?{v:num(T[T.length-1].v[p]),ts:T[T.length-1].ts, prev:T.length>1?num(T[T.length-2].v[p]):null}:null }
+function status(p,v){ const [lo,hi]=tgt(p); if(v==null) return ''; if(v>=lo&&v<=hi) return 's-ok'; const span=(hi-lo)||Math.abs(hi)||1; return (v<lo-span*0.5||v>hi+span*0.5)?'s-bad':'s-warn' }
+
+/* ---------- Manutenzione / avvio / osmosi ---------- */
+function day0(ts){ const d=new Date(ts); d.setHours(0,0,0,0); return d.getTime() }
+function addDays(ts,n){ const d=new Date(ts); d.setDate(d.getDate()+n); return d.getTime() }
+function nextDue(t){
+  const today=day0(Date.now());
+  if(t.kind==='interval'){ const ev=Math.max(1,num(t.every)||7); return t.lastDone? addDays(day0(t.lastDone),ev) : today }
+  const days=[...new Set((t.days||[]).map(Number).filter(d=>d>=1&&d<=31))].sort((a,b)=>a-b); if(!days.length) return today;
+  const after = t.lastDone? day0(t.lastDone) : addDays(today,-1);
+  const a=new Date(after);
+  for(let k=0;k<4;k++){ const y=a.getFullYear(), m=a.getMonth()+k, last=new Date(y,m+1,0).getDate();
+    for(const d of days){ const ts=new Date(y,m,Math.min(d,last)).getTime(); if(ts>after) return ts } }
+  return today;
+}
+function dueDiff(t){ return Math.round((nextDue(t)-day0(Date.now()))/DAY) }
+function dueBadge(t){ const d=dueDiff(t);
+  if(d<0) return `<span class="tag" style="background:#3a1717;color:#ffb4b4;border-color:#5a2323">scaduta da ${-d} gg</span>`;
+  if(d===0) return `<span class="tag" style="background:#33270b;color:#ffd98a;border-color:#6b5212">oggi</span>`;
+  if(d===1) return `<span class="tag" style="color:#ffd98a">domani</span>`;
+  return `<span class="tag">${fdate(nextDue(t))} · tra ${d} gg</span>` }
+function cadence(t){ return t.kind==='interval'? `ogni ${num(t.every)||7} giorni` : `il ${(t.days||[]).join(' e il ')} di ogni mese` }
+function bacterMl(){ return (num(S.settings.bacterPer250)||5)*vol()/250 }
+function startMode(){ return S.settings.startMode || (S.settings.startDate?'fixed':'none') }
+function bacterOn(){ return S.settings.bacterOn ?? (startMode()==='fixed') }
+function bactNames(){ return String(S.settings.bactName||'Bacter Mix + Bacter Nitrix').split('+').map(x=>x.trim()).filter(Boolean) }
+function bacterTxt(){ const m=bacterMl(); return bactNames().map(n=>`${n} ${fmt(m,1)} ml`).join(' + ') }
+const DEFAULT_TASKS=[
+  {name:"Cambio acqua 10%",kind:'interval',every:7,wc:true},
+  {name:"Test parametri",kind:'interval',every:7,auto:'test'},
+  {name:"Pulizia bicchiere schiumatoio",kind:'interval',every:7},
+  {name:"Lettura TDS osmosi",kind:'interval',every:14,auto:'tds'},
+];
+async function autoDone(kind,ts){
+  for(const t of S.tasks.filter(t=>t.auto===kind)){ if(!t.lastDone||ts>t.lastDone){ await saveItem('tasks',Object.assign(clone(t),{lastDone:ts})) } }
+}
+function startInfo(){
+  const mode=startMode(); if(mode==='none') return null;
+  const sd=S.settings.startDate; if(!sd) return null; const st=day0(new Date(sd+'T00:00').getTime()); if(!isFinite(st)) return null;
+  const day=Math.floor((day0(Date.now())-st)/DAY)+1, week=Math.ceil(day/7);
+  if(mode==='cycle'){
+    // concluso quando NH4 e NO2 sono ~0 in due test consecutivi che li misurano entrambi
+    const T=S.tests.filter(t=>t.ts>=st&&num(t.v?.nh4)!=null&&num(t.v?.no2)!=null).sort(byTs); let end=null;
+    for(let i=1;i<T.length;i++){ const z=t=>num(t.v.nh4)<=0.02&&num(t.v.no2)<=0.02; if(z(T[i-1])&&z(T[i])){ end=T[i].ts; break } }
+    const done=!!end; return {mode,st,day,week,end,done,show:day>=1&&(!done||Date.now()-end<=7*DAY)};
+  }
+  const tot=Math.max(1,num(S.settings.startDays)||28), end=addDays(st,tot), done=day>tot;
+  return {mode,st,tot,day,week,weeks:Math.ceil(tot/7),end,done,show:day>=1&&day<=tot+7};
+}
+const RO_TYPES={tds:'Lettura TDS',resin:'Resine cambiate',membr:'Membrana cambiata',prefilt:'Prefiltri cambiati'};
+function lastEv(type){ return S.events.filter(e=>e.type===type).sort(byTs).pop() }
+function tdsState(v){ const mx=num(S.settings.tdsMax)||3; if(v==null) return ['','–']; if(v>=mx) return ['s-bad','cambia le resine']; if(v>0) return ['s-warn','accettabile']; return ['s-ok','perfetto'] }
+async function saveFile(fn,data,mime){
+  const C=CAP(); const plug=n=>C&&((C.Plugins&&C.Plugins[n])||(C.registerPlugin&&C.registerPlugin(n))); const FS=plug('Filesystem'), SH=plug('Share');
+  if(FS&&SH){ try{ const w=await FS.writeFile({path:fn,data,directory:'CACHE',encoding:'utf8'}); await SH.share({title:fn,files:[w.uri],dialogTitle:'Salva o invia '+fn}); return 'shared' }catch(err){ if(/cancel/i.test(String(err&&err.message))) return 'abort'; console.warn(err) } }
+  try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); return 'saved' } }catch(err){}
+  try{ const f=new File([data],fn,{type:mime}); if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:fn}); return 'shared' } }catch(err){ if(err&&err.name==='AbortError') return 'abort' }
+  try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data],{type:mime})); a.download=fn; document.body.appendChild(a); a.click(); a.remove(); return 'downloaded' }catch(err){}
+  return null;
+}
+function icsDate(ts){ const d=new Date(ts); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0') }
+function icsEsc(t){ return String(t).replace(/[\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n') }
+function buildIcs(){
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Reef Log//IT','CALSCALE:GREGORIAN'];
+  const stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+  const ev=(id,ts,rule,t)=>{ const desc=t.bacter?bacterTxt():''; L.push('BEGIN:VEVENT','UID:'+id+'@reeflog','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+icsDate(ts),'DTEND;VALUE=DATE:'+icsDate(addDays(ts,1)),'RRULE:'+rule,'SUMMARY:'+icsEsc('🐠 '+t.name));
+    if(desc) L.push('DESCRIPTION:'+icsEsc(desc)); L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc(t.name),'TRIGGER:PT9H','END:VALARM','END:VEVENT') };
+  for(const t of S.tasks){
+    if(t.kind==='interval') ev(t.id,nextDue(t),'FREQ=DAILY;INTERVAL='+Math.max(1,num(t.every)||7),t);
+    else{ const days=(t.days||[]).map(Number).filter(d=>d>=1&&d<=31); if(!days.length) continue;
+      ev(t.id,nextDue(t),'FREQ=MONTHLY;BYMONTHDAY='+days.join(','),t);
+      if(days.some(d=>d>28)){ const y=new Date().getFullYear(); ev(t.id+'-feb',new Date(y,2,0).getTime(),'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1',t) } }
+  }
+  L.push('END:VCALENDAR'); return L.join('\r\n');
+}
+
+/* ---------- Foto (IndexedDB, solo su questo dispositivo) ---------- */
+S.photos=[]; let photoSel=null; // null = modalità normale, array = selezione per confronto
+let _pdb=null;
+function pdb(){ if(_pdb) return _pdb; _pdb=new Promise((res,rej)=>{ try{ const r=indexedDB.open('reeflog-photos',1); r.onupgradeneeded=()=>r.result.createObjectStore('photos',{keyPath:'id'}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error) }catch(e){ rej(e) } }); return _pdb }
+async function ptx(mode,fn){ const db=await pdb(); return new Promise((res,rej)=>{ const tx=db.transaction('photos',mode); const st=tx.objectStore('photos'); const out=fn(st); tx.oncomplete=()=>res(out instanceof IDBRequest?out.result:out); tx.onerror=()=>rej(tx.error) }) }
+async function loadPhotos(){ try{ const all=await ptx('readonly',st=>st.getAll()); const m=(all||[]).map(p=>({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null})).sort((a,b)=>b.ts-a.ts); S.photos=m.filter(p=>!p.lv); S.lvPhotos={}; for(const p of m) if(p.lv) S.lvPhotos[p.id]=p }catch(e){ S.photos=[]; S.lvPhotos={} } }
+function allPhotoMetas(){ return [...S.photos,...Object.values(S.lvPhotos)] }
+async function getPhoto(id){ return ptx('readonly',st=>st.get(id)) }
+async function putPhoto(rec,quiet){ await ptx('readwrite',st=>st.put(rec)); if(!quiet) enqueue('photos',rec.id,'put') }
+async function delPhoto(id,quiet){ await ptx('readwrite',st=>st.delete(id)); if(!quiet) enqueue('photos',id,'del') }
+function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src }) }
+async function resizeTo(img,max,q,type){ const sc=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)); const c=document.createElement('canvas'); c.width=Math.round(img.naturalWidth*sc); c.height=Math.round(img.naturalHeight*sc); c.getContext('2d').drawImage(img,0,0,c.width,c.height); return type==='url'? c.toDataURL('image/jpeg',q) : new Promise(r=>c.toBlob(r,'image/jpeg',q)) }
+async function addPhotos(files){
+  let n=0; toast('Elaborazione foto…');
+  for(const f of files){ try{
+    const url=URL.createObjectURL(f); const img=await loadImg(url);
+    const blob=await resizeTo(img,1600,0.82); const thumb=await resizeTo(img,360,0.7,'url'); URL.revokeObjectURL(url);
+    const lm=f.lastModified; const ts=(lm&&lm<=Date.now()&&lm>Date.now()-5*365*DAY)?lm:Date.now();
+    await putPhoto({id:uid(),ts,note:'',blob,thumb}); n++ }catch(e){} }
+  await loadPhotos(); toast(n?`${n} foto aggiunte`:'Foto non leggibile'); render();
+}
+function dayLabel(ts){ const si=startInfo(); if(!si) return ''; const d=Math.floor((day0(ts)-si.st)/DAY)+1; return d>=1?`giorno ${d}`:'' }
+function vFoto(){
+  const sel=photoSel;
+  let h=`<div class="card"><h2>Foto della vasca <span class="tag">${S.photos.length}</span></h2>
+    <div class="row"><button class="btn" id="addPhoto">📷 Aggiungi foto</button>${S.photos.length>=2?`<button class="btn sec" id="cmpBtn">${sel?'Annulla confronto':'Confronta'}</button>`:''}${S.photos.length>=2&&!sel?`<button class="btn sec" id="cmpFirst">Prima vs ora</button>`:''}</div>
+    ${sel?`<div class="small" style="margin-top:8px;color:var(--acc)">Tocca due foto da confrontare (${sel.length}/2)</div>`:''}
+    <div class="small mut" style="margin-top:6px">Le foto restano su questo telefono (ridotte a 1600 px). Per salvarle altrove usa il backup con foto in Impostazioni.</div></div>`;
+  if(!S.photos.length) return h+`<div class="card mut small">Ancora nessuna foto. Scattane una oggi: tra qualche settimana sarà bello confrontarla.</div>`;
+  let lastM='';
+  h+=`<div class="card">`;
+  const groups={}; for(const p of S.photos){ const m=new Date(p.ts).toLocaleDateString('it-IT',{month:'long',year:'numeric'}); (groups[m]=groups[m]||[]).push(p) }
+  for(const m in groups){ h+=`<h2 style="margin-top:6px">${m}</h2><div class="pgrid" style="margin-bottom:10px">`;
+    for(const p of groups[m]){ const i=sel?sel.indexOf(p.id):-1; h+=`<button class="ph ${i>=0?'sel':''}" data-ph="${p.id}"><img src="${p.thumb}" alt=""><span>${fdate(p.ts)}${dayLabel(p.ts)?' · '+dayLabel(p.ts):''}</span>${i>=0?`<b>${i+1}</b>`:''}</button>` }
+    h+=`</div>` }
+  return h+`</div>`;
+}
+let ovUrls=[];
+function ovOpened(){ try{ if(!(history.state&&history.state.ov)) history.pushState({ov:1},'') }catch(e){} }
+function ovClose(){ if(history.state&&history.state.ov){ history.back() } else { closeOv(); render() } }
+function closeOv(){ const o=document.getElementById('ov'); o.classList.add('hide'); o.innerHTML=''; ovUrls.forEach(u=>URL.revokeObjectURL(u)); ovUrls=[]; document.body.style.overflow='' }
+async function openViewer(id){
+  const list=S.photos; let idx=list.findIndex(p=>p.id===id); if(idx<0) return;
+  const o=document.getElementById('ov'); document.body.style.overflow='hidden';
+  const show=async()=>{
+    ovUrls.forEach(u=>URL.revokeObjectURL(u)); ovUrls=[];
+    const meta=list[idx]; const rec=await getPhoto(meta.id); const url=rec&&rec.blob?URL.createObjectURL(rec.blob):meta.thumb; if(rec&&rec.blob) ovUrls.push(url);
+    o.innerHTML=`<div class="top"><div style="flex:1"><b>${new Date(meta.ts).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</b><div class="small" style="color:#bbb">${dayLabel(meta.ts)}${dayLabel(meta.ts)?' dall\'avvio · ':''}${idx+1} di ${list.length}</div></div>
+      <button class="btn sm sec" id="ovDel">🗑</button><button class="btn sm sec" id="ovX">✕</button></div>
+      <div class="stage"><img src="${url}" alt="">${idx<list.length-1?'<button class="nav" id="ovPrev" style="left:4px">‹</button>':''}${idx>0?'<button class="nav" id="ovNext" style="right:4px">›</button>':''}</div>
+      <div class="row" style="margin-top:8px"><input id="ovNote" placeholder="Nota (es. nuovo corallo, alga in calo…)" value="${esc(meta.note)}" style="flex:1"><input type="date" id="ovDate" value="${toInput(meta.ts).slice(0,10)}" style="width:150px"></div>`;
+    document.getElementById('ovX').onclick=ovClose;
+    const pv=document.getElementById('ovPrev'); if(pv) pv.onclick=()=>{ idx++; show() };
+    const nx=document.getElementById('ovNext'); if(nx) nx.onclick=()=>{ idx--; show() };
+    const del=document.getElementById('ovDel'); del.onclick=async()=>{ if(del.dataset.c!=='1'){ del.dataset.c='1'; del.textContent='Elimina?'; del.classList.add('danger'); return }
+      await delPhoto(meta.id); await loadPhotos(); toast('Foto eliminata'); if(!S.photos.length){ ovClose(); return } idx=Math.min(idx,S.photos.length-1); list.splice(0,list.length,...S.photos); show() };
+    const save=async()=>{ const nEl=document.getElementById('ovNote'), dEl=document.getElementById('ovDate'); if(!nEl||!dEl) return; const note=nEl.value.trim(), dv=dEl.value; const r=await getPhoto(meta.id); if(!r) return;
+      let ts=r.ts; if(dv){ const old=new Date(r.ts); const nd=new Date(dv+'T00:00'); nd.setHours(old.getHours(),old.getMinutes()); if(isFinite(nd)) ts=nd.getTime() }
+      if(note===r.note&&ts===r.ts) return; r.note=note; r.ts=ts; await putPhoto(r); meta.note=note; meta.ts=ts; await loadPhotos(); toast('Salvato') };
+    document.getElementById('ovNote').onchange=save; document.getElementById('ovDate').onchange=save;
+    // swipe
+    let x0=null; const stg=o.querySelector('.stage'); stg.ontouchstart=e=>{x0=e.touches[0].clientX}; stg.ontouchend=e=>{ if(x0==null) return; const dx=e.changedTouches[0].clientX-x0; x0=null; if(dx>50&&idx<list.length-1){idx++;show()} else if(dx<-50&&idx>0){idx--;show()} };
+  };
+  o.classList.remove('hide'); ovOpened(); await show();
+}
+async function openCompare(idA,idB){
+  let [a,b]=[S.photos.find(p=>p.id===idA),S.photos.find(p=>p.id===idB)]; if(!a||!b) return; if(a.ts>b.ts) [a,b]=[b,a];
+  const [ra,rb]=await Promise.all([getPhoto(a.id),getPhoto(b.id)]);
+  const ua=URL.createObjectURL(ra.blob), ub=URL.createObjectURL(rb.blob); ovUrls=[ua,ub];
+  const o=document.getElementById('ov'); document.body.style.overflow='hidden';
+  const days=Math.round((day0(b.ts)-day0(a.ts))/DAY);
+  o.innerHTML=`<div class="top"><div style="flex:1"><b>Prima e dopo</b><div class="small" style="color:#bbb">${fdate(a.ts,true)} → ${fdate(b.ts,true)} · ${days} giorni</div></div><button class="btn sm sec" id="ovX">✕</button></div>
+    <div class="stage"><div class="cmp" id="cmpBox"><img src="${ua}" alt=""><img class="b" id="cmpB" src="${ub}" alt=""><div class="line" id="cmpLine"></div>
+      <span class="lbl" style="left:6px">${fdate(a.ts)}</span><span class="lbl" style="right:6px">${fdate(b.ts)}</span></div></div>
+    <input type="range" id="cmpR" min="0" max="100" value="50" style="margin-top:12px;accent-color:#2ec4d6">
+    <div class="small" style="color:#bbb;text-align:center;margin-top:4px">Trascina per scoprire la foto più recente</div>`;
+  const set=v=>{ document.getElementById('cmpB').style.clipPath=`inset(0 0 0 ${v}%)`; document.getElementById('cmpLine').style.left=v+'%' };
+  set(50); document.getElementById('cmpR').oninput=e=>set(e.target.value);
+  const box=document.getElementById('cmpBox'); const drag=e=>{ const r=box.getBoundingClientRect(); const x=(e.touches?e.touches[0].clientX:e.clientX)-r.left; const v=Math.max(0,Math.min(100,100*x/r.width)); document.getElementById('cmpR').value=v; set(v) };
+  box.ontouchmove=e=>{ e.preventDefault(); drag(e) }; box.onmousemove=e=>{ if(e.buttons) drag(e) };
+  document.getElementById('ovX').onclick=ovClose;
+  o.classList.remove('hide'); ovOpened();
+}
+async function photosForBackup(){ const out=[]; for(const m of allPhotoMetas()){ const r=await getPhoto(m.id); if(!r||!r.blob) continue;
+  const d=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(r.blob) }); out.push({id:r.id,ts:r.ts,note:r.note||'',thumb:r.thumb,lv:r.lv||null,data:d}) } return out }
+
+
+
+/* ---------- Animali e coralli ---------- */
+const LV_CAT={fish:['🐠','Pesci'],sps:['🪸','Coralli SPS'],lps:['🪸','Coralli LPS'],soft:['🌿','Coralli molli'],inv:['🦐','Invertebrati'],cuc:['🐌','Squadra pulizia'],other:['•','Altro']};
+const LV_ST={alive:'In vasca',dead:'Perso',gone:'Ceduto'};
+let lvFilter='alive', lvEdit=null, lvPendingPhoto=null;
+function lvAlive(){ return S.livestock.filter(x=>(x.status||'alive')==='alive') }
+function eur(v){ return v==null?'–':v.toLocaleString('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:v%1?2:0}) }
+function lvCost(x){ return (num(x.price)||0) }
+function lvThumb(x){ const p=x.photo&&S.lvPhotos[x.photo]; return p?p.thumb:null }
+function vAnimali(){
+  const all=S.livestock, alive=lvAlive();
+  const spent=all.reduce((a,x)=>a+lvCost(x),0), val=alive.reduce((a,x)=>a+lvCost(x),0);
+  let h=`<div class="card"><h2>Animali e coralli</h2><div class="grid">
+    <div class="tile"><div class="k">In vasca</div><div class="v">${alive.reduce((a,x)=>a+(num(x.qty)||1),0)}</div><div class="d">${alive.length} ${alive.length===1?'scheda':'schede'}</div></div>
+    <div class="tile"><div class="k">Valore in vasca</div><div class="v" style="font-size:18px">${eur(val)}</div></div>
+    <div class="tile"><div class="k">Speso in totale</div><div class="v" style="font-size:18px">${eur(spent)}</div><div class="d">${all.length-alive.length} persi/ceduti</div></div></div>`;
+  const byCat={}; for(const x of all){ const c=x.cat||'other'; byCat[c]=byCat[c]||{n:0,spent:0,alive:0}; byCat[c].spent+=lvCost(x); byCat[c].n++; if((x.status||'alive')==='alive') byCat[c].alive+=(num(x.qty)||1) }
+  if(all.length){ h+=`<div class="list small" style="margin-top:8px">`; for(const c of Object.keys(LV_CAT)) if(byCat[c]) h+=`<div class="it"><div class="body">${LV_CAT[c][0]} ${LV_CAT[c][1]}</div><div class="mut">${byCat[c].alive} in vasca</div><div style="min-width:70px;text-align:right"><b>${eur(byCat[c].spent)}</b></div></div>`; h+=`</div>` }
+  h+=`<button class="btn" id="lvAdd" style="margin-top:10px;width:100%">+ Aggiungi animale o corallo</button></div>`;
+  if(lvEdit) h+=lvForm();
+  const chips=[['alive','In vasca'],['all','Tutti'],['lost','Persi/ceduti'],...Object.keys(LV_CAT).filter(c=>all.some(x=>(x.cat||'other')===c)).map(c=>[c,LV_CAT[c][1]])];
+  h+=`<div class="chips" style="margin-top:10px">${chips.map(([k,l])=>`<button class="chip ${lvFilter===k?'on':''}" data-lvf="${k}">${l}</button>`).join('')}</div>`;
+  const L=all.filter(x=>{ const st=x.status||'alive'; if(lvFilter==='alive') return st==='alive'; if(lvFilter==='lost') return st!=='alive'; if(lvFilter==='all') return true; return (x.cat||'other')===lvFilter }).sort((a,b)=>b.ts-a.ts);
+  if(!all.length) return h+`<div class="card small mut">Nessuna scheda. Aggiungi i primi abitanti: anche squadra di pulizia e rocce vive con ospiti.</div>`;
+  if(!L.length) return h+`<div class="card small mut">Nessun elemento in questo filtro.</div>`;
+  for(const x of L){ const th=lvThumb(x), st=x.status||'alive', cat=LV_CAT[x.cat||'other']||LV_CAT.other;
+    const days=Math.floor(((st==='alive'?Date.now():(x.endTs||Date.now()))-x.ts)/DAY);
+    h+=`<div class="card row" data-lv="${x.id}" style="flex-wrap:nowrap;align-items:flex-start;gap:12px;${st!=='alive'?'opacity:.6':''}">
+      ${th?`<img src="${th}" style="width:76px;height:76px;object-fit:cover;border-radius:10px;flex:none">`:`<div style="width:76px;height:76px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:30px;flex:none">${cat[0]}</div>`}
+      <div style="flex:1;min-width:0"><div><b>${esc(x.name)}</b>${(num(x.qty)||1)>1?` <span class="mut">×${num(x.qty)}</span>`:''}</div>
+        ${x.species?`<div class="small mut" style="font-style:italic">${esc(x.species)}</div>`:''}
+        <div class="small" style="margin-top:3px"><span class="tag">${cat[1]}</span> ${st!=='alive'?`<span class="tag" style="color:#ffb4b4">${LV_ST[st]} ${x.endTs?fdate(x.endTs):''}</span>`:''}</div>
+        <div class="small mut" style="margin-top:3px">Inserito ${fdate(x.ts,true)} · ${st==='alive'?'in vasca da ':'rimasto '}${days} gg${dayLabel(x.ts)?` · ${dayLabel(x.ts)} dell'avvio`:''}</div>
+        <div class="small" style="margin-top:2px">${x.source?esc(x.source):''}${x.source&&num(x.price)!=null?' · ':''}${num(x.price)!=null?'<b>'+eur(num(x.price))+'</b>':''}</div>
+        ${x.note?`<div class="small mut" style="margin-top:2px">${esc(x.note)}</div>`:''}</div></div>`;
+  }
+  return h;
+}
+function lvForm(){
+  const x=lvEdit, isNew=!x.id, st=x.status||'alive';
+  const th=lvPendingPhoto?lvPendingPhoto.thumb:lvThumb(x);
+  return `<div class="card"><h2>${isNew?'Nuovo abitante':'Modifica scheda'}</h2><form id="fLv">
+    <div class="row" style="flex-wrap:nowrap;align-items:center"><button type="button" id="lvPhotoBtn" style="width:84px;height:84px;border-radius:12px;border:1px dashed var(--line);background:var(--card2);color:var(--mut);padding:0;overflow:hidden;flex:none">${th?`<img src="${th}" style="width:100%;height:100%;object-fit:cover">`:'📷<br><span style="font-size:11px">Foto</span>'}</button>
+      <div style="flex:1"><div class="f"><label>Nome</label><input name="name" value="${esc(x.name||'')}" placeholder="es. Pagliaccio, Acropora verde"></div>
+      <div class="f" style="margin-top:6px"><label>Specie (facoltativo)</label><input name="species" value="${esc(x.species||'')}" placeholder="es. Amphiprion ocellaris"></div></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Categoria</label><select name="cat">${Object.entries(LV_CAT).map(([k,[i,l]])=>`<option value="${k}" ${ (x.cat||'fish')===k?'selected':''}>${i} ${l}</option>`).join('')}</select></div>
+      <div class="f"><label>Data inserimento</label><input type="date" name="ts" value="${toInput(x.ts||Date.now()).slice(0,10)}"></div></div>
+    <div class="row" style="margin-top:8px"><div class="f" style="flex:2"><label>Provenienza</label><input name="source" value="${esc(x.source||'')}" placeholder="negozio, talea da…, scambio"></div>
+      <div class="f"><label>Prezzo totale €</label><input name="price" inputmode="decimal" value="${num(x.price)!=null?String(num(x.price)).replace('.',','):''}"></div>
+      <div class="f" style="max-width:80px"><label>Quantità</label><input name="qty" inputmode="numeric" value="${esc(String(x.qty||1))}"></div></div>
+    ${isNew?'':`<div class="row" style="margin-top:8px"><div class="f"><label>Stato</label><select name="status" id="lvSt">${Object.entries(LV_ST).map(([k,l])=>`<option value="${k}" ${st===k?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="f ${st==='alive'?'hide':''}" id="lvEndF"><label>Dal</label><input type="date" name="endTs" value="${toInput(x.endTs||Date.now()).slice(0,10)}"></div></div>`}
+    <div class="f" style="margin-top:8px"><label>Note</label><input name="note" value="${esc(x.note||'')}" placeholder="posizione in vasca, acclimatazione, alimentazione…"></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="lvCancel">Annulla</button>${isNew?'':`<button class="btn sm danger" type="button" id="lvDel" style="margin-left:auto">Elimina</button>`}</div>
+    ${isNew?'<div class="small mut" style="margin-top:6px">L\'inserimento viene annotato anche nel diario.</div>':''}</form></div>`;
+}
+function dateToTs(v,fallback){ if(!v) return fallback; const d=new Date(v+'T12:00'); return isFinite(d)?d.getTime():fallback }
+function bindAnimali(){
+  const app=document.getElementById('app');
+  const add=document.getElementById('lvAdd'); if(add) add.onclick=()=>{ lvEdit={}; lvPendingPhoto=null; render(); document.getElementById('fLv')?.scrollIntoView({block:'start'}) };
+  app.querySelectorAll('[data-lvf]').forEach(b=>b.onclick=()=>{ lvFilter=b.dataset.lvf; render() });
+  app.querySelectorAll('[data-lv]').forEach(b=>b.onclick=()=>{ lvEdit=clone(S.livestock.find(x=>x.id===b.dataset.lv)); lvPendingPhoto=null; render(); window.scrollTo(0,0) });
+  const f=document.getElementById('fLv'); if(!f) return;
+  document.getElementById('lvCancel').onclick=()=>{ lvEdit=null; lvPendingPhoto=null; render() };
+  document.getElementById('lvPhotoBtn').onclick=()=>document.getElementById('lvPhotoIn').click();
+  const sel=document.getElementById('lvSt'); if(sel) sel.onchange=()=>document.getElementById('lvEndF').classList.toggle('hide',sel.value==='alive');
+  const del=document.getElementById('lvDel'); if(del) del.onclick=async()=>{ if(del.dataset.c!=='1'){ del.dataset.c='1'; del.textContent='Confermi?'; return }
+    const x=lvEdit; if(x.photo){ await delPhoto(x.photo); await loadPhotos() } await delItem('livestock',x.id); lvEdit=null; toast('Scheda eliminata'); render() };
+  f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return }
+    const isNew=!lvEdit.id; const x=Object.assign(clone(lvEdit),{id:lvEdit.id||uid(),name:o.name.trim(),species:(o.species||'').trim(),cat:o.cat,ts:dateToTs(o.ts,lvEdit.ts||Date.now()),source:(o.source||'').trim(),price:num(o.price),qty:Math.max(1,Math.round(num(o.qty)||1)),note:(o.note||'').trim()});
+    if(!isNew){ x.status=o.status||'alive'; x.endTs= x.status==='alive'? null : dateToTs(o.endTs,Date.now()) } else x.status='alive';
+    if(lvPendingPhoto){ const pid=uid(); await putPhoto({id:pid,ts:Date.now(),note:x.name,thumb:lvPendingPhoto.thumb,blob:lvPendingPhoto.blob,lv:x.id}); if(x.photo) await delPhoto(x.photo); x.photo=pid; await loadPhotos() }
+    if(!await saveItem('livestock',x)) return;
+    if(isNew) await saveItem('events',{id:uid(),ts:x.ts,type:'live',note:`Inserito: ${x.name}${x.qty>1?' ×'+x.qty:''}${x.source?' ('+x.source+')':''}`});
+    lvEdit=null; lvPendingPhoto=null; toast('Scheda salvata'); render() };
+}
+
+/* ---------- Sincronizzazione Supabase ---------- */
+const SB_URL='https://wnzpuucvwtmbdluxhsvy.supabase.co', SB_KEY='sb_publishable_vh-YYrPtI_n1tLvSfxDeJg_KVBvbaJ2';
+let sb=null, sbUser=null, syncing=false, syncErr='', syncAgain=false;
+let Q={}; try{ Q=JSON.parse(localStorage.getItem('reeflog.queue')||'{}')||{} }catch(e){ Q={} }
+function saveQ(){ try{ localStorage.setItem('reeflog.queue',JSON.stringify(Q)) }catch(e){} }
+function lastSyncTs(){ try{ return +localStorage.getItem('reeflog.lastSync')||0 }catch(e){ return 0 } }
+function enqueue(coll,id,op){ if(!id) return; Q[coll+':'+id]=op; saveQ(); scheduleSync() }
+function enqueueAll(){ for(const c of ['tests','doses','events','tasks','livestock']) for(const it of S[c]) Q[c+':'+it.id]='put'; Q['settings:main']='put'; for(const p of allPhotoMetas()) Q['photos:'+p.id]='put'; saveQ(); scheduleSync() }
+function syncLabel(){ if(LOCAL_ONLY) return 'sul telefono'; if(!sbUser) return 'locale'; if(!navigator.onLine) return '⚠︎ offline'; if(syncing) return '⟳ sincronizzo…'; if(syncErr) return '⚠︎ errore sync'; const n=Object.keys(Q).length; return n?`⟳ ${n} in attesa`:'☁︎ sincronizzato' }
+function updHdr(){ const el=document.getElementById('hdrSub'); if(el) el.innerHTML=`${vol()} L netti<br>${syncLabel()}` }
+let _st=null; function scheduleSync(ms=1500){ updHdr(); if(!sbUser) return; clearTimeout(_st); _st=setTimeout(sync,ms) }
+function loadScript(src){ return new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=src; sc.onload=res; sc.onerror=rej; document.head.appendChild(sc) }) }
+async function initSync(){
+  try{
+    if(!window.supabase) await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2');
+    sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+    sb.auth.onAuthStateChange((ev,session)=>{ const u=session?.user||null; const changed=(u?.id)!==(sbUser?.id); sbUser=u; if(changed){ if(u) onLogin(); scheduleRender() } });
+    const {data}=await sb.auth.getSession(); if(data?.session?.user && !sbUser){ sbUser=data.session.user; onLogin(); scheduleRender() }
+  }catch(e){ sb=null; scheduleRender() }
+}
+function needFull(){ try{ return localStorage.getItem('reeflog.syncUser')!==sbUser.id }catch(e){ return true } }
+function onLogin(){ if(needFull()) try{ localStorage.removeItem('reeflog.cursor') }catch(e){} sync() }
+// primo collegamento di questo dispositivo: prima scarica, poi invia solo ciò che sul server manca
+function enqueueMissing(seen){
+  for(const c of ['tests','doses','events','tasks','livestock']) for(const it of S[c]) if(!seen.has(c+':'+it.id)) Q[c+':'+it.id]='put';
+  for(const p of allPhotoMetas()) if(!seen.has('photos:'+p.id)) Q['photos:'+p.id]='put';
+  if(!seen.has('settings:main')) Q['settings:main']='put';
+  saveQ();
+}
+function itemData(coll,id){ if(coll==='settings') return clone(S.settings); const it=(S[coll]||[]).find(x=>x.id===id); return it?clone(it):null }
+async function push(){
+  const keys=Object.keys(Q); if(!keys.length) return;
+  const rows=[], done=[];
+  for(const k of keys){ const i=k.indexOf(':'), coll=k.slice(0,i), id=k.slice(i+1), op=Q[k];
+    if(coll==='photos'){
+      const path=`${sbUser.id}/${id}.jpg`;
+      if(op==='put'){ const r=await getPhoto(id);
+        if(r&&r.blob){ const up=await sb.storage.from('photos').upload(path,r.blob,{upsert:true,contentType:'image/jpeg'}); if(up.error) throw up.error;
+          const {error}=await sb.from('items').upsert({user_id:sbUser.id,coll,id,data:{id,ts:r.ts,note:r.note||'',thumb:r.thumb,lv:r.lv||null},deleted:false},{onConflict:'user_id,coll,id'}); if(error) throw error }
+      }else{ await sb.storage.from('photos').remove([path]);
+        const {error}=await sb.from('items').upsert({user_id:sbUser.id,coll,id,data:null,deleted:true},{onConflict:'user_id,coll,id'}); if(error) throw error }
+      delete Q[k]; saveQ(); updHdr(); continue;
+    }
+    const data= op==='put'? itemData(coll,id) : null;
+    if(op==='put'&&!data){ done.push(k); continue }
+    rows.push({user_id:sbUser.id,coll,id,data,deleted:op==='del'}); done.push(k);
+  }
+  for(let i=0;i<rows.length;i+=200){ const {error}=await sb.from('items').upsert(rows.slice(i,i+200),{onConflict:'user_id,coll,id'}); if(error) throw error }
+  for(const k of done) if(Q[k]!==undefined) delete Q[k]; saveQ();
+}
+async function pull(){
+  let cur=''; try{ cur=localStorage.getItem('reeflog.cursor')||'' }catch(e){}
+  const from = cur? new Date(new Date(cur).getTime()-60000).toISOString() : '1970-01-01T00:00:00Z';
+  let maxTs=cur, changed=false, photosChanged=false; const seen=new Set();
+  for(let page=0;page<50;page++){
+    const {data,error}=await sb.from('items').select('coll,id,data,deleted,updated_at').gt('updated_at',from).order('updated_at',{ascending:true}).range(page*1000,page*1000+999);
+    if(error) throw error;
+    for(const r of data){
+      if(!maxTs||r.updated_at>maxTs) maxTs=r.updated_at; seen.add(r.coll+':'+r.id);
+      if(Q[r.coll+':'+r.id]!==undefined) continue; // modifica locale non ancora inviata: vince quella
+      if(r.coll==='settings'){ if(!r.deleted&&r.data&&JSON.stringify(r.data)!==JSON.stringify(S.settings)){ S.settings=Object.assign(clone(DEF_SETTINGS),r.data); changed=true } continue }
+      if(r.coll==='photos'){
+        const ex=await getPhoto(r.id);
+        if(r.deleted){ if(ex){ await delPhoto(r.id,true); photosChanged=true } continue }
+        if(!ex){ const dl=await sb.storage.from('photos').download(`${sbUser.id}/${r.id}.jpg`); if(dl.error||!dl.data) continue; await putPhoto({id:r.id,ts:r.data.ts,note:r.data.note||'',thumb:r.data.thumb,lv:r.data.lv||null,blob:dl.data},true); photosChanged=true }
+        else if(ex.ts!==r.data.ts||(ex.note||'')!==(r.data.note||'')){ ex.ts=r.data.ts; ex.note=r.data.note||''; await putPhoto(ex,true); photosChanged=true }
+        continue;
+      }
+      if(!S[r.coll]||!Array.isArray(S[r.coll])) continue;
+      const arr=S[r.coll], i=arr.findIndex(x=>x.id===r.id);
+      if(r.deleted){ if(i>=0){ arr.splice(i,1); changed=true } }
+      else if(r.data){ if(i<0){ arr.push(r.data); changed=true } else if(JSON.stringify(arr[i])!==JSON.stringify(r.data)){ arr[i]=r.data; changed=true } }
+    }
+    if(data.length<1000) break;
+  }
+  if(maxTs) try{ localStorage.setItem('reeflog.cursor',maxTs) }catch(e){}
+  if(changed) lsSave();
+  if(photosChanged) await loadPhotos();
+  if(changed||photosChanged) scheduleRender();
+  return seen;
+}
+async function sync(){
+  if(!sb||!sbUser||!navigator.onLine){ updHdr(); return }
+  if(syncing){ syncAgain=true; return }
+  syncing=true; syncErr=''; updHdr();
+  try{
+    if(needFull()){ const seen=await pull(); enqueueMissing(seen); await push(); try{ localStorage.setItem('reeflog.syncUser',sbUser.id) }catch(e){} }
+    else { await push(); await pull() }
+    try{ localStorage.setItem('reeflog.lastSync',Date.now()) }catch(e){} }
+  catch(e){ syncErr=(e&&e.message)||'errore'; console.warn('sync',e) }
+  finally{ syncing=false; updHdr(); if(view==='set'&&!isTyping()) scheduleRender(); if(syncAgain){ syncAgain=false; scheduleSync(500) } }
+}
+window.addEventListener('online',()=>scheduleSync(300));
+window.addEventListener('offline',updHdr);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleSync(300) });
+setInterval(()=>{ if(document.visibilityState==='visible') sync() },60000);
+function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`  <div class="card"><h2>Backup</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
+  ${allPhotoMetas().length?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="bkPhotos" checked style="width:auto;margin-right:6px">Includi le ${allPhotoMetas().length} foto nel backup (file più grande)</label>`:''}
+  <textarea id="expBox" class="hide" style="margin-top:8px;min-height:120px" readonly></textarea>
+  <div class="small mut" style="margin-top:6px">${S.tests.length} test · ${S.doses.length} variazioni dose · ${S.events.length} voci diario · archivio ${S.mode==='db'?'sul tuo account (privato)':'locale'}.</div></div>`;
+  return h;
+}
+function vSync(){
+  let h=`<div class="card"><h2>Sincronizzazione</h2>`;
+  if(!sb) return h+`<p class="small mut">Servizio non raggiungibile (sei offline?). I dati restano salvati qui e si sincronizzeranno più tardi.</p></div>`;
+  if(sbUser){
+    const n=Object.keys(Q).length, ls=lastSyncTs();
+    h+=`<div class="small">Collegato come <b>${esc(sbUser.email||'')}</b></div>
+      <div class="small mut" style="margin-top:4px">${ls?'Ultima sincronizzazione: '+fdate(ls)+' '+ftime(ls):'Mai sincronizzato'}${n?` · ${n} modifiche in attesa`:''}</div>
+      ${syncErr?`<div class="small" style="color:var(--bad);margin-top:4px">Errore: ${esc(syncErr)}</div>`:''}
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="syNow">Sincronizza ora</button><button class="btn sm sec" id="syOut">Esci</button></div>
+      <div class="small mut" style="margin-top:6px">Dati e foto si sincronizzano da soli su tutti i dispositivi collegati con questo account. Funziona anche offline: le modifiche partono appena torna la rete.</div>`;
+  }else{
+    h+=`<form id="fSync"><div class="small mut" style="margin-bottom:8px">Accedi con lo stesso account su telefono e PC per avere gli stessi dati ovunque.</div>
+      <div class="f"><label>Email</label><input name="email" type="email" autocomplete="email"></div>
+      <div class="f" style="margin-top:8px"><label>Password</label><input name="pass" type="password" autocomplete="current-password"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" type="submit">Accedi</button><button class="btn sec" type="button" id="syReg">Crea account</button></div>
+      <div id="syMsg" class="small" style="margin-top:6px"></div></form>`;
+  }
+  return h+`</div>`;
+}
+function bindSync(){
+  const f=document.getElementById('fSync'), msg=t=>{ const m=document.getElementById('syMsg'); if(m) m.textContent=t };
+  if(f){
+    f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); msg('Accesso…');
+      const {error}=await sb.auth.signInWithPassword({email:(o.email||'').trim(),password:o.pass||''});
+      if(error) msg(/confirm/i.test(error.message)?'Devi prima confermare l\'email: controlla la posta.':/invalid/i.test(error.message)?'Email o password errate.':error.message); else { toast('Accesso effettuato'); render() } };
+    document.getElementById('syReg').onclick=async()=>{ const o=formVals(f); if(!o.email||(o.pass||'').length<6){ msg('Inserisci email e una password di almeno 6 caratteri.'); return } msg('Creo l\'account…');
+      const {data,error}=await sb.auth.signUp({email:o.email.trim(),password:o.pass,options:{emailRedirectTo:location.origin+location.pathname}});
+      if(error) msg(error.message); else if(data.session) { toast('Account creato'); render() } else msg('Account creato: apri il link di conferma che ti ho mandato via email, poi accedi qui.') };
+  }
+  const sn=document.getElementById('syNow'); if(sn) sn.onclick=async()=>{ sn.disabled=true; await sync(); toast(syncErr?'Errore di sincronizzazione':'Sincronizzato'); render() };
+  const so=document.getElementById('syOut'); if(so) so.onclick=async()=>{ if(so.dataset.c!=='1'){ so.dataset.c='1'; so.textContent='Confermi?'; return } await sb.auth.signOut(); sbUser=null; toast('Disconnesso: i dati restano su questo dispositivo'); render() };
+}
+
+/* ---------- Render ---------- */
+function render(){
+  const app=document.getElementById('app');
+  Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
+  const hdr=document.getElementById('hdrSub');
+  hdr.innerHTML = `${vol()} L netti<br>${S.mode==='db'?'☁︎ sincronizzato':syncLabel()}`;
+  let h='';
+  if(S.mode==='local' && S.ready && !sbUser && backupDue()) h+=`<div class="banner">I dati sono salvati su questo dispositivo. ${lastBackup()?`Ultimo backup ${Math.floor((Date.now()-lastBackup())/DAY)} giorni fa`:'Non hai ancora fatto un backup'}: <a href="#" data-go="sync" style="color:#ffd98a">esporta ora</a>.<button id="bkClose" style="float:right;background:none;border:0;color:#ffd98a;font-size:18px;line-height:1;padding:0 0 0 10px">✕</button></div>`;
+  if(S.mode==='db' && S.stale && !S.tests.length && !S.doses.length) h+=`<div class="banner">Caricamento dati…</div>`;
+  h += (VIEWS[view]||vHome)();
+  app.innerHTML=h;
+  bind();
+  if(view==='param'&&sub==='grafici') drawCharts();
+  if(view==='home'){ drawSpark(); drawStart() }
+  if(view==='osmosi') drawTds();
+}
+
+function vHome(){
+  const lt = S.tests.length? Math.max(...S.tests.map(t=>t.ts)) : null;
+  let h='';
+  if(!S.settings.welcomed && !S.tests.length){
+    h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
+      <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
+      <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
+  }
+  const si=startInfo();
+  if(si && si.show){
+    const done=si.done, fixed=si.mode==='fixed';
+    const nh=lastVal('nh4'), no2=lastVal('no2'), no3=lastVal('no3');
+    h+=`<div class="card"><h2>${fixed?'Avvio vasca':'Maturazione'} <span class="tag">${done?'completat'+(fixed?'o':'a'):fixed?'settimana '+si.week+' di '+si.weeks:'settimana '+si.week}</span></h2>
+      <div class="big" style="font-size:20px">${done?(fixed?`Avvio completato il ${fdate(si.end,true)}`:`Ciclo completato il ${fdate(si.end,true)}`):fixed?`Giorno ${si.day} di ${si.tot}`:`Giorno ${si.day}`}</div>
+      ${fixed?`<div style="height:8px;background:#0a1a24;border-radius:6px;margin:8px 0;overflow:hidden"><div style="height:100%;width:${Math.min(100,100*si.day/si.tot)}%;background:var(--acc)"></div></div>`:'<div style="height:6px"></div>'}
+      <div class="small mut">Partita il ${fdate(si.st,true)}${fixed?(done?'':` · mancano ${si.tot-si.day+1} giorni`):(done?` · durata ${Math.round((day0(si.end)-si.st)/DAY)+1} giorni`:' · si conclude quando NH₄ e NO₂ sono a zero in due test di fila')}</div>
+      <div class="row small" style="margin-top:8px;gap:14px">${[['NH₄',nh,'nh4'],['NO₂',no2,'no2'],['NO₃',no3,'no3']].map(([n,l,p])=>`<span>${n}: <b>${l?fmt(l.v,P[p].d):'–'}</b>${l?` <span class="mut">(${fdate(l.ts)})</span>`:''}</span>`).join('')}</div>
+      <canvas id="cStart" height="140" style="margin-top:8px"></canvas></div>`;
+  }
+  const soon=S.tasks.filter(t=>dueDiff(t)<=2).sort((a,b)=>nextDue(a)-nextDue(b));
+  const ltds=lastEv('tds'); const tdsBad=ltds&&num(ltds.tds)>=(num(S.settings.tdsMax)||3);
+  if(soon.length||tdsBad){
+    h+=`<div class="card"><h2>Da fare</h2><div class="list">`;
+    for(const t of soon) h+=`<div class="it"><div class="body"><b>${esc(t.name)}</b>${t.bacter?`<div class="small mut">${bacterTxt()}</div>`:''}</div><div>${dueBadge(t)}</div></div>`;
+    if(tdsBad) h+=`<div class="it"><div class="body"><b style="color:var(--bad)">Osmosi: TDS ${fmt(num(ltds.tds),0)} ppm</b><div class="small mut">Raggiunta la soglia: cambia le resine</div></div></div>`;
+    h+=`</div><button class="btn sm sec" data-go="manut" style="margin-top:8px">Apri manutenzione</button></div>`;
+  }
+  h+=`<div class="card"><h2>Ultimi valori ${lt?`<span class="tag">ultimo test ${Math.floor((Date.now()-lt)/DAY)===0?'oggi':Math.floor((Date.now()-lt)/DAY)+' gg fa'}</span>`:''}</h2>`;
+  const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]);
+  if(!S.tests.length) h+=`<p class="mut">Nessun test registrato. <button class="btn sm" data-go="param-nuovo">Inserisci il primo test</button></p>`;
+  else{
+    h+=`<div class="grid">`;
+    for(const p of ps){ const l=lastVal(p); if(!l) continue;
+      const dd = l.prev!=null? l.v-l.prev : null;
+      h+=`<div class="tile ${status(p,l.v)}" data-graf="${p}"><div class="k">${P[p].n}</div><div class="v">${fmt(l.v,P[p].d)} <small>${P[p].u}</small></div><div class="d">${fdate(l.ts)}${dd!=null?` · ${dd>0?'+':''}${fmt(dd,P[p].d)}`:''}</div></div>` }
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  // Triade
+  h+=`<div class="card"><h2>Triade · ${isAIO()?'All In One':'Balling'}</h2><div class="tri"><div></div><div class="h">Dose attuale</div><div class="h">Consumo/g</div><div class="h">${isAIO()?'AIO per coprirlo':'Dose suggerita'}</div>`;
+  for(const p of TRI){
+    const eff=effPerMl(p), cons=avgCons(p), r=rateAt(p,Date.now());
+    const sugg = (cons!=null&&eff)? Math.max(0,cons*vol()/eff) : null;
+    h+=`<div><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div>
+        <div class="big">${fmt(r,1)} <small class="mut">ml/g</small></div>
+        <div>${cons!=null?`${fmt(cons,p==='kh'?2:1)} <small class="mut">${P[p].u}</small>`:'<span class="mut">–</span>'}</div>
+        <div>${sugg!=null?`<b>${fmt(sugg,1)}</b> <small class="mut">ml/g</small>`:'<span class="mut">–</span>'}</div>`;
+  }
+  h+=`</div>`;
+  if(isAIO()){
+    const s={}; for(const p of TRI){ const c=avgCons(p), e=aioEff(p); s[p]=(c!=null&&e)?Math.max(0,c*vol()/e):null }
+    if(s.kh!=null){
+      const r=rateAt('kh',Date.now());
+      h+=`<hr><div class="small">Dose AIO suggerita (sul consumo di KH): <b class="big">${fmt(s.kh,1)} ml/g</b> <span class="mut">(attuale ${fmt(r,1)})</span>`;
+      const notes=[];
+      for(const p of ['ca','mg']){ if(s[p]==null||s.kh<=0) continue; const d=(s.kh-s[p])/s[p];
+        if(Math.abs(d)>0.25) notes.push(`${P[p].n} ${d>0?'andrebbe in <b>accumulo</b>':'tenderebbe a <b>calare</b>'} (copre il ${fmt(100*s.kh/s[p],0)}% del consumo)`) }
+      h+= notes.length?`<div style="margin-top:4px;color:var(--warn)">Con questa dose: ${notes.join('; ')}. Valuta un'integrazione singola nel Diario.</div>`:`<div class="mut" style="margin-top:4px">Ca e Mg risultano in equilibrio con il KH.</div>`;
+      h+=`</div>`;
+    }
+  }
+  const cCa=avgCons('ca'), cKh=avgCons('kh');
+  if(cCa!=null&&cKh!=null&&cKh>0.05){
+    const ratio=cCa/cKh;
+    h+=`<hr><div class="small">Rapporto consumi Ca/KH: <b>${fmt(ratio,1)}</b> ppm per dKH <span class="mut">(teorico ≈ 7,1 se il consumo è solo da calcificazione)</span>${ratio<5||ratio>9.5?' <span style="color:var(--warn)">· scostamento ampio: verifica test o precipitazioni</span>':''}</div>`;
+  }
+  // correzioni
+  let corr='';
+  for(const p of TRI){ const l=lastVal(p), eff=effPerMl(p); if(!l||!eff) continue; const [lo,hi]=tgt(p); const mid=(lo+hi)/2;
+    if(l.v<lo){ const ml=(mid-l.v)*vol()/eff; corr+=`<div>• ${P[p].n}: ${fmt(l.v,P[p].d)} sotto target → circa <b>${fmt(ml,0)} ml${isAIO()?' di AIO':''}</b> una tantum per arrivare a ${fmt(mid,P[p].d)}${p==='kh'&&(mid-l.v)>1?` <span class="mut">(dividi in ${Math.ceil(mid-l.v)} giorni: max ~1 dKH/giorno)</span>`:''}</div>` } }
+  if(corr) h+=`<hr><div class="small"><div class="mut" style="margin-bottom:4px">Correzioni suggerite</div>${corr}</div>`;
+  if(!effPerMl('mg')||!effPerMl('ca')) h+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
+  h+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div></div>`;
+  return h;
+}
+
+function vTest(){
+  const t=editTest||{id:null,ts:Date.now(),v:{},note:''};
+  const ps=Object.keys(P);
+  let h=`<div class="card"><h2>${editTest?'Modifica test':'Nuovo test'}</h2><form id="fTest">
+    <div class="f" style="margin-bottom:8px"><label>Data e ora</label><input type="datetime-local" name="ts" value="${toInput(t.ts)}"></div>
+    <div class="grid">`;
+  for(const p of ps){ const last=lastVal(p);
+    h+=`<div class="f"><label>${P[p].n}${P[p].u?' ('+P[p].u+')':''}</label><input name="${p}" inputmode="decimal" autocomplete="off" value="${t.v[p]!=null?esc(String(t.v[p]).replace('.',',')):''}" placeholder="${last?fmt(last.v,P[p].d):''}"></div>` }
+  h+=`</div><div class="f" style="margin-top:8px"><label>Note (kit usato, osservazioni…)</label><textarea name="note">${esc(t.note)}</textarea></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva test</button>${editTest?'<button class="btn sec" type="button" id="cancelEdit">Annulla</button>':''}</div>
+    <div class="small mut" style="margin-top:6px">Compila solo i parametri misurati. Il segnaposto mostra l'ultimo valore.</div></form></div>`;
+  return h;
+}
+function vTestHist(){
+  let h=`<div class="card"><h2>Storico test (${S.tests.length})</h2><div class="list">`;
+  const T=[...S.tests].sort((a,b)=>b.ts-a.ts);
+  if(!T.length) h+=`<p class="mut">Nessun test.</p>`;
+  for(const x of T){
+    const vals=Object.keys(x.v||{}).filter(p=>P[p]&&num(x.v[p])!=null).map(p=>`<span class="${status(p,num(x.v[p]))}" style="border-left:3px solid;padding-left:4px;margin-right:8px;white-space:nowrap">${P[p].n} <b>${fmt(num(x.v[p]),P[p].d)}</b></span>`).join(' ');
+    h+=`<div class="it"><div class="when">${fdate(x.ts,true)}<br>${ftime(x.ts)}</div><div class="body">${vals}${x.note?`<div class="mut small" style="margin-top:3px">${esc(x.note)}</div>`:''}</div>
+      <div class="acts"><button class="btn sm sec" data-edit="${x.id}">✎</button>${delBtn('tests',x.id)}</div></div>`;
+  }
+  return h+`</div></div>`;
+}
+function delBtn(coll,id){ const k=coll+':'+id; return confirmKey===k?`<button class="btn sm danger" data-del="${k}">Elimina?</button>`:`<button class="btn sm sec" data-ask="${k}">🗑</button>` }
+
+function vDosi(){
+  const cur={ca:rateAt('ca',Date.now()),kh:rateAt('kh',Date.now()),mg:rateAt('mg',Date.now())};
+  const aio=isAIO();
+  let h=`<div class="card"><h2>Metodo</h2><div class="chips" style="margin:0">
+    <button class="chip ${!aio?'on':''}" data-mode="balling">Balling 3 parti</button><button class="chip ${aio?'on':''}" data-mode="aio">All In One</button></div>
+    <div class="small mut" style="margin-top:6px">${aio?'Unica soluzione che apporta Ca, KH e Mg insieme (tipica dei nano reef).':'Tre soluzioni separate per Ca, KH e Mg.'} Puoi cambiare metodo quando vuoi: lo storico resta valido.</div></div>`;
+  h+=`<div class="card"><h2>Dose giornaliera attuale</h2>`;
+  if(aio) h+=`<div class="big" style="font-size:24px">${fmt(cur.kh,1)} <small class="mut">ml/g di All In One</small></div>`;
+  h+=`<div class="grid" style="margin-top:8px">`;
+  for(const p of TRI) h+=`<div class="tile" style="border-left-color:${TRI_COL[p]}"><div class="k">${P[p].n}</div><div class="v">${aio?'':fmt(cur[p],1)+' <small>ml/g</small>'}${aio&&effPerMl(p)?fmt(cur[p]*effPerMl(p)/vol(),p==='kh'?3:1)+` <small>${P[p].u}/g</small>`:''}</div><div class="d">${effPerMl(p)?(aio?'apporto giornaliero':`≈ ${fmt(cur[p]*effPerMl(p)/vol(),p==='kh'?3:2)} ${P[p].u}/g`):'conc. non impostata'}</div></div>`;
+  h+=`</div></div>`;
+  h+=`<div class="card"><h2>Imposta nuova dose</h2><form id="fDose">
+    <div class="f" style="margin-bottom:8px"><label>In vigore da</label><input type="datetime-local" name="ts" value="${toInput(Date.now())}"></div>
+    <div class="row">${aio?`<div class="f"><label>All In One ml/g</label><input name="aio" inputmode="decimal" value="${String(cur.kh).replace('.',',')}"></div>`:TRI.map(p=>`<div class="f"><label>${P[p].n} ml/g</label><input name="${p}" inputmode="decimal" value="${String(cur[p]).replace('.',',')}"></div>`).join('')}</div>
+    <div class="f" style="margin-top:8px"><label>Nota</label><input name="note" placeholder="es. aumento KH dopo calo"></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva dose</button></div>
+    <div class="small mut" style="margin-top:6px">Registra ogni variazione della pompa dosometrica: l'app integra le dosi nel tempo per calcolare i consumi. Le dosi manuali una tantum vanno nel Diario.</div>
+  </form></div>`;
+  h+=`<div class="card"><h2>Storico variazioni</h2><div class="list">`;
+  const R=[...S.doses].sort((a,b)=>b.ts-a.ts);
+  if(!R.length) h+=`<p class="mut">Nessuna dose registrata.</p>`;
+  for(const d of R) h+=`<div class="it"><div class="when">${fdate(d.ts,true)}</div><div class="body">${d.kind==='aio'?`<span class="tag">AIO</span> <b>${fmt(num(d.aio)||0,1)} ml</b>`:TRI.map(p=>`<span style="margin-right:10px"><span class="dot" style="background:${TRI_COL[p]}"></span>${fmt(num(d[p])||0,1)} ml</span>`).join('')}${d.note?`<div class="mut small">${esc(d.note)}</div>`:''}</div><div class="acts">${delBtn('doses',d.id)}</div></div>`;
+  h+=`</div></div>`;
+  // tabella intervalli
+  h+=`<div class="card"><h2>Bilancio tra test</h2>`;
+  for(const p of TRI){ const I=intervals(p).slice(-6).reverse(); if(!I.length) continue;
+    h+=`<div style="margin:6px 0 4px"><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div><div class="list small">`;
+    for(const x of I) h+=`<div class="it"><div class="when">${fdate(x.t1)}→${fdate(x.t2)}</div><div class="body">${fmt(x.c1,P[p].d)} → ${fmt(x.c2,P[p].d)} · dosati ${fmt(x.ml,0)} ml${x.added!=null?` (+${fmt(x.added,P[p].d+1)})`:''}${x.wc?` · cambi ${x.wc>0?'+':''}${fmt(x.wc,P[p].d+1)}`:''}<br>Consumo: <b>${x.cons!=null?fmt(x.cons,p==='kh'?2:1)+' '+P[p].u+'/g':'–'}</b></div></div>`;
+    h+=`</div>`;
+  }
+  if(!TRI.some(p=>intervals(p).length)) h+=`<p class="mut small">Servono almeno due test dello stesso parametro.</p>`;
+  return h+`</div>`;
+}
+
+function shownParams(){ return (S.settings.showParams||Object.keys(P)).filter(p=>P[p]) }
+function vGraf(){
+  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}</div></div>`;
+  const ps=shownParams();
+  if(!ps.length) h+=`<div class="card mut">Nessun parametro selezionato: spuntali in Impostazioni → Range obiettivo.</div>`;
+  for(const p of ps){ const n=testsWith(p).length;
+    h+=`<div class="card" id="g_${p}"><h2>${P[p].n} ${P[p].u?'('+P[p].u+')':''} <span class="tag">${n} test</span></h2>${n?`<canvas id="cv_${p}" height="150"></canvas>`:'<p class="mut small">Nessun test registrato per questo parametro.</p>'}</div>`;
+  }
+  h+=`<div class="card"><h2>Consumo giornaliero triade</h2><canvas id="cCons" height="200"></canvas><div class="small mut">Ca e Mg in ppm/g (asse sinistro), KH in dKH/g (asse destro).</div></div>`;
+  h+=`<div class="card"><h2>Dosi (ml/g)</h2><canvas id="cDose" height="170"></canvas></div>`;
+  return h;
+}
+
+function vManut(){
+  let h=`<div class="card"><h2>Scadenze</h2>`;
+  if(!S.tasks.length) h+=`<p class="small mut">Nessuna scadenza impostata.</p><button class="btn sm" id="seedTasks">Crea le scadenze consigliate</button><div class="small mut" style="margin-top:6px">${bacterOn()?`Cambio 10% il 15 e il 30 con ${bactNames().join(' e ')}`:'Cambio 10% settimanale'}, test settimanale, schiumatoio, TDS osmosi. Potrai modificarle.</div>`;
+  const T=[...S.tasks].sort((a,b)=>nextDue(a)-nextDue(b));
+  h+=`<div class="list">`;
+  for(const t of T){
+    h+=`<div class="it" style="flex-wrap:wrap"><div class="body"><b>${esc(t.name)}</b><div class="small mut">${cadence(t)}${t.lastDone?` · ultima ${fdate(t.lastDone)}`:''}${t.auto==='test'?' · si spunta salvando un test':''}${t.auto==='tds'?' · si spunta salvando un TDS':''}</div>${t.bacter?`<div class="small">${bacterTxt()}</div>`:''}<div style="margin-top:4px">${dueBadge(t)}</div></div>
+      <div class="acts"><button class="btn sm" data-done="${t.id}">Fatto</button><button class="btn sm sec" data-etask="${t.id}">✎</button>${delBtn('tasks',t.id)}</div>`;
+    if(doneOpen===t.id && t.wc){
+      h+=`<form id="fDone" data-id="${t.id}" style="width:100%;margin-top:8px;background:var(--card2);padding:10px;border-radius:10px">
+        <div class="row"><div class="f"><label>Litri cambiati</label><input name="liters" inputmode="decimal" value="${fmt(vol()*0.1,1)}"></div><div class="f"><label>Data</label><input type="datetime-local" name="ts" value="${toInput(Date.now())}"></div></div>
+        ${t.bacter?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="bact" checked style="width:auto;margin-right:6px">Aggiunti ${bacterTxt()}</label>`:''}
+        <div class="row" style="margin-top:8px"><button class="btn sm" type="submit">Registra cambio</button><button class="btn sm sec" type="button" id="doneCancel">Annulla</button></div></form>`;
+    }
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  const et=editTask||{};
+  h+=`<details ${editTask?'open':''} style="margin-top:8px"><summary>${editTask&&editTask.id?'Modifica scadenza':'+ Nuova scadenza'}</summary>
+    <form id="fTask" style="margin-top:6px"><div class="f"><label>Nome</label><input name="name" value="${esc(et.name||'')}" placeholder="es. Pulizia vetri"></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Ricorrenza</label><select name="kind" id="tkKind"><option value="interval" ${et.kind!=='monthly'?'selected':''}>Ogni N giorni</option><option value="monthly" ${et.kind==='monthly'?'selected':''}>Giorni fissi del mese</option></select></div>
+      <div class="f" id="tkEvery"><label>Ogni quanti giorni</label><input name="every" inputmode="numeric" value="${esc(String(et.every||7))}"></div>
+      <div class="f hide" id="tkDays"><label>Giorni del mese</label><input name="days" value="${esc((et.days||[15,30]).join(', '))}" placeholder="15, 30"></div></div>
+    <label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="wc" ${et.wc?'checked':''} style="width:auto;margin-right:6px">È un cambio d'acqua (lo registra nel diario)</label>
+    <label class="small" style="display:block;margin-top:4px"><input type="checkbox" name="bacter" ${et.bacter?'checked':''} style="width:auto;margin-right:6px">Con reintegro batteri (${esc(bactNames().join(' + '))})</label>
+    <div class="row" style="margin-top:8px"><button class="btn sm" type="submit">Salva</button>${editTask?'<button class="btn sm sec" type="button" id="tkCancel">Annulla</button>':''}</div></form></details>`;
+  if(S.tasks.length) h+=`<hr><button class="btn sm sec" id="icsBtn">📅 Aggiungi al calendario del telefono</button><div class="small mut" style="margin-top:4px">Crea un file .ics con le ricorrenze e un promemoria alle 9:00. Le scadenze "ogni N giorni" nel calendario restano fisse anche se fai la cosa in ritardo.</div>`;
+  h+=`</div>`;
+  return h;
+}
+function vOsmo(){
+  let h='';
+  const lt=lastEv('tds'), lr=lastEv('resin'), lm=lastEv('membr'), lp=lastEv('prefilt'); const [cls,txt]=tdsState(lt?num(lt.tds):null);
+  const sinceR = lr? S.events.filter(e=>e.type==='tds'&&e.ts>=lr.ts).length : null;
+  h+=`<div class="card"><h2>Impianto osmosi</h2><div class="grid">
+    <div class="tile ${cls}"><div class="k">Ultimo TDS</div><div class="v">${lt?fmt(num(lt.tds),0):'–'} <small>ppm</small></div><div class="d">${lt?fdate(lt.ts)+' · '+txt:'nessuna lettura'}</div></div>
+    <div class="tile"><div class="k">Resine</div><div class="v" style="font-size:16px">${lr?fdate(lr.ts,true):'–'}</div><div class="d">${lr?Math.floor((Date.now()-lr.ts)/DAY)+' gg · '+sinceR+' letture':'mai registrate'}</div></div>
+    <div class="tile"><div class="k">Membrana</div><div class="v" style="font-size:16px">${lm?fdate(lm.ts,true):'–'}</div><div class="d">${lm?Math.floor((Date.now()-lm.ts)/DAY)+' gg':''}</div></div>
+    <div class="tile"><div class="k">Prefiltri</div><div class="v" style="font-size:16px">${lp?fdate(lp.ts,true):'–'}</div><div class="d">${lp?Math.floor((Date.now()-lp.ts)/DAY)+' gg':''}</div></div></div>
+    <form id="fTds" class="row" style="margin-top:10px"><div class="f"><label>TDS in uscita (ppm)</label><input name="tds" inputmode="decimal" placeholder="0"></div><div class="f" style="flex:0 0 auto;justify-content:flex-end"><button class="btn" type="submit">Salva lettura</button></div></form>
+    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-ro="resin">Resine cambiate</button><button class="btn sm sec" data-ro="membr">Membrana cambiata</button><button class="btn sm sec" data-ro="prefilt">Prefiltri cambiati</button></div>
+    <canvas id="cTds" height="130" style="margin-top:10px"></canvas>
+    <div class="small mut" style="margin-top:4px">Soglia cambio resine: ${fmt(num(S.settings.tdsMax)||3,0)} ppm (modificabile in Impostazioni). Il grafico parte dall'ultimo cambio resine.</div></div>`;
+  return h;
+}
+function vDiario(){
+  let h=`<div class="card"><h2>Nuova voce</h2><form id="fEv">
+    <div class="row"><div class="f"><label>Tipo</label><select name="type" id="evType">
+      <option value="wc">Cambio d'acqua</option><option value="dose">Dose manuale (una tantum)</option><option value="maint">Manutenzione</option><option value="live">Inserimento animali/coralli</option><option value="note">Nota</option><option value="tds">Lettura TDS osmosi</option><option value="resin">Resine osmosi cambiate</option><option value="membr">Membrana osmosi cambiata</option><option value="prefilt">Prefiltri osmosi cambiati</option></select></div>
+      <div class="f"><label>Data</label><input type="datetime-local" name="ts" value="${toInput(Date.now())}"></div></div>
+    <div id="evWc" class="row" style="margin-top:8px"><div class="f"><label>Litri cambiati</label><input name="liters" inputmode="decimal"></div></div>
+    <div id="evTds" class="row hide" style="margin-top:8px"><div class="f"><label>TDS (ppm)</label><input name="tds" inputmode="decimal"></div></div>
+    <div id="evDose" class="row hide" style="margin-top:8px">${isAIO()?`<div class="f"><label>All In One ml</label><input name="aio" inputmode="decimal"></div>`:''}${TRI.map(p=>`<div class="f"><label>${P[p].n} ml${isAIO()?' (Balling singolo)':''}</label><input name="${p}" inputmode="decimal"></div>`).join('')}</div>
+    <div class="f" style="margin-top:8px"><label>Descrizione</label><input name="note" placeholder="es. pulizia schiumatoio, cambio resine osmosi, TDS 0"></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Aggiungi</button></div></form></div>`;
+  const lab=Object.assign({wc:"Cambio d'acqua",dose:'Dose manuale',maint:'Manutenzione',live:'Inserimento',note:'Nota'},RO_TYPES);
+  h+=`<div class="card"><h2>Diario</h2><div class="list">`;
+  const E=[...S.events].sort((a,b)=>b.ts-a.ts);
+  if(!E.length) h+=`<p class="mut">Nessuna voce.</p>`;
+  for(const e of E){
+    let d=''; if(e.type==='wc') d=`${fmt(num(e.liters),1)} L (${fmt(100*(num(e.liters)||0)/vol(),0)}%)`;
+    if(e.type==='tds') d=`<b>${fmt(num(e.tds),1)} ppm</b>`;
+    if(e.type==='dose') d= e.kind==='aio' ? `All In One ${fmt(num(e.aio),1)} ml` : TRI.filter(p=>num(e[p])).map(p=>`${P[p].n} ${fmt(num(e[p]),1)} ml`).join(' · ');
+    h+=`<div class="it"><div class="when">${fdate(e.ts,true)}</div><div class="body"><span class="tag">${lab[e.type]||e.type}</span> ${d}${e.note?`<div class="small">${esc(e.note)}</div>`:''}</div><div class="acts">${delBtn('events',e.id)}</div></div>`;
+  }
+  return h+`</div></div>`;
+}
+
+function vSet(){
+  const s=S.settings;
+  let h=`<form id="fSet"><div class="card"><h2>Vasca</h2>
+    <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" value="${esc(String(s.volume).replace('.',','))}"></div></div>
+    <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
+  <div class="card"><h2>Avvio e manutenzione</h2>
+    <div class="f"><label>Avvio / maturazione</label><select name="startMode" id="stMode">
+      <option value="fixed" ${startMode()==='fixed'?'selected':''}>Protocollo a durata fissa (es. Yorah)</option>
+      <option value="cycle" ${startMode()==='cycle'?'selected':''}>Fino alla fine del ciclo dell'azoto</option>
+      <option value="none" ${startMode()==='none'?'selected':''}>Nessuno: vasca già matura</option></select></div>
+    <div class="row ${startMode()==='none'?'hide':''}" id="stRow" style="margin-top:8px"><div class="f"><label>Data avvio vasca</label><input type="date" name="startDate" value="${esc(s.startDate||'')}"></div><div class="f ${startMode()!=='fixed'?'hide':''}" id="stDays"><label>Durata (giorni)</label><input name="startDays" inputmode="numeric" value="${esc(String(s.startDays??28))}"></div></div>
+    <div class="small mut" style="margin-top:4px" id="stHelp">${startMode()==='cycle'?'Il riquadro in Home si chiude da solo quando ammoniaca e nitriti risultano a zero in due test consecutivi.':startMode()==='fixed'?'Il riquadro in Home conta giorni e settimane sul totale indicato.':'Nessun riquadro di avvio in Home.'}</div>
+    <hr>
+    <label class="small" style="display:block"><input type="checkbox" name="bacterOn" id="bacOn" ${bacterOn()?'checked':''} style="width:auto;margin-right:6px">Reintegro batteri ai cambi d'acqua</label>
+    <div class="row ${bacterOn()?'':'hide'}" id="bacRow" style="margin-top:8px"><div class="f" style="flex:2"><label>Prodotti (separati da +)</label><input name="bactName" value="${esc(s.bactName||'Bacter Mix + Bacter Nitrix')}"></div><div class="f"><label>ml ogni 250 L</label><input name="bacterPer250" inputmode="decimal" value="${esc(String(s.bacterPer250??5).replace('.',','))}"></div></div>
+    ${bacterOn()?`<div class="small mut" style="margin-top:4px">Con ${fmt(vol(),0)} L netti: ${bacterTxt()} a ogni cambio.</div>`:''}
+    <hr>
+    <div class="row"><div class="f"><label>Soglia TDS cambio resine (ppm)</label><input name="tdsMax" inputmode="decimal" value="${esc(String(s.tdsMax??3).replace('.',','))}"></div></div></div>
+  <div class="card"><h2>All In One</h2>
+    <div class="small mut" style="margin-bottom:6px">Dati dall'etichetta del prodotto: di quanto alza <b>1 ml in 100 L</b>.</div>
+    <div class="row">${TRI.map(p=>`<div class="f"><label>${P[p].n} (${P[p].u})</label><input name="a_${p}" inputmode="decimal" value="${esc(String(s.aio?.[p]??'').replace('.',','))}"></div>`).join('')}</div>
+    <div class="small mut" style="margin-top:4px">Se l'etichetta indica altri volumi (es. 1 ml in 50 L), converti: valore × 50 / 100.</div></div>
+  <div class="card"><h2>Soluzioni Balling 3 parti</h2>
+    <div class="row">
+      <div class="f"><label>Calcio: mg Ca per ml</label><input name="c_ca" inputmode="decimal" value="${esc(String(s.conc.ca??'').replace('.',','))}"></div>
+      <div class="f"><label>KH: meq per ml</label><input name="c_kh" inputmode="decimal" value="${esc(String(s.conc.kh??'').replace('.',','))}"></div>
+      <div class="f"><label>Magnesio: mg Mg per ml</label><input name="c_mg" inputmode="decimal" value="${esc(String(s.conc.mg??'').replace('.',','))}"></div>
+    </div>
+    <details><summary>Calcola dalla ricetta (g di sale per litro)</summary>
+      <div class="row" style="margin-top:6px">
+        <div class="f"><label>CaCl₂·2H₂O g/L</label><input id="r_ca" inputmode="decimal" placeholder="71,5"></div>
+        <div class="f"><label>NaHCO₃ g/L</label><input id="r_hco3" inputmode="decimal" placeholder="84"></div>
+        <div class="f"><label>Na₂CO₃ g/L</label><input id="r_co3" inputmode="decimal" placeholder=""></div>
+      </div><div class="row" style="margin-top:6px">
+        <div class="f"><label>MgCl₂·6H₂O g/L</label><input id="r_mgcl" inputmode="decimal"></div>
+        <div class="f"><label>MgSO₄·7H₂O g/L</label><input id="r_mgso" inputmode="decimal"></div>
+      </div>
+      <button type="button" class="btn sm sec" id="calcRecipe" style="margin-top:8px">Calcola e applica</button>
+      <div class="small mut" style="margin-top:4px">Balling commerciale: se "1 ml in 100 L alza Ca/Mg di X ppm" → mg/ml = X × 100; se alza il KH di Y dKH → meq/ml = Y × 100 / 2,8.</div>
+    </details></div>
+  <div class="card"><h2>Acqua del cambio (sale)</h2>
+    <div class="row">${TRI.map(p=>`<div class="f"><label>${P[p].n} (${P[p].u})</label><input name="s_${p}" inputmode="decimal" value="${esc(String(s.salt?.[p]??'').replace('.',','))}"></div>`).join('')}</div>
+    <div class="small mut" style="margin-top:4px">Facoltativo: se compilato, l'effetto dei cambi d'acqua viene sottratto dal calcolo dei consumi.</div></div>
+  <div class="card"><h2>Range obiettivo</h2>`;
+  for(const p of Object.keys(P)){ const [lo,hi]=tgt(p); const show=(s.showParams||[]).includes(p);
+    h+=`<div class="row" style="margin-bottom:6px"><label style="min-width:96px;font-size:13px"><input type="checkbox" name="show_${p}" ${show?'checked':''} style="width:auto;margin-right:6px">${P[p].n}</label>
+      <input name="lo_${p}" inputmode="decimal" value="${String(lo).replace('.',',')}" style="flex:1;min-width:70px"><span class="mut">–</span><input name="hi_${p}" inputmode="decimal" value="${String(hi).replace('.',',')}" style="flex:1;min-width:70px"></div>` }
+  h+=`<div class="small mut">La spunta decide quali parametri vedi in Home.</div></div>
+  <div class="card"><button class="btn" type="submit" style="width:100%">Salva impostazioni</button></div></form>
+`;
+  return h;
+}
+
+/* ---------- Grafici ---------- */
+const AX={ticks:{color:'#8aa7b6',font:{size:11}},grid:{color:'#1f415355'}};
+function xTime(min,max){ return {type:'linear',min,max,ticks:{...AX.ticks,maxTicksLimit:6,callback:v=>fdate(v)},grid:AX.grid} }
+function rangeFrom(){ return grafRange? Date.now()-grafRange*DAY : null }
+function drawCharts(){
+  if(!window.Chart){ document.querySelectorAll('canvas').forEach(c=>c.outerHTML='<p class="mut small">Grafici non disponibili (libreria non caricata, controlla la connessione).</p>'); return }
+  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+  const from=rangeFrom(), to=Date.now();
+  const xmin0 = from ?? Math.min(to-30*DAY, ...S.tests.map(t=>t.ts));
+  const xmin = xmin0;
+  for(const p of shownParams()){
+    const el=document.getElementById('cv_'+p); if(!el) continue;
+    const pts=testsWith(p).filter(t=>!from||t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); const [lo,hi]=tgt(p);
+    charts['v_'+p]=new Chart(el,{type:'line',data:{datasets:[
+      {label:P[p].n,data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:3.5,tension:.25,borderWidth:2},
+      {label:'min',data:[{x:xmin,y:lo},{x:to,y:lo}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2},
+      {label:'max',data:[{x:xmin,y:hi},{x:to,y:hi}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2,fill:'-1',backgroundColor:'#3fcf8e12'}
+    ]},options:{animation:false,plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0,callbacks:{title:i=>fdate(i[0].parsed.x,true)}}},scales:{x:xTime(xmin,to),y:AX}}});
+  }
+  // consumi
+  const ds=[]; for(const q of TRI){ const I=intervals(q).filter(x=>x.cons!=null&&(!from||x.t2>=from)); if(!I.length) continue;
+    const d=[]; for(const x of I){ d.push({x:x.t1,y:x.cons},{x:x.t2,y:x.cons}) }
+    ds.push({label:P[q].n,data:d,borderColor:TRI_COL[q],backgroundColor:TRI_COL[q],pointRadius:0,borderWidth:2,yAxisID:q==='kh'?'y2':'y'}) }
+  const c2=document.getElementById('cCons');
+  if(c2) charts.cons=new Chart(c2,{type:'line',data:{datasets:ds},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,title:{display:true,text:'ppm/g'}},y2:{...AX,ticks:{...AX.ticks,callback:v=>fmt(v,2)},grace:'10%',position:'right',grid:{display:false},title:{display:true,text:'dKH/g'}}}}});
+  // dosi
+  const R=regimens(); const dd=[];
+  const keys=[]; if(R.some(r=>r.kind!=='aio')) keys.push(...TRI); if(R.some(r=>r.kind==='aio')) keys.push('aio');
+  for(const q of keys){ const d=[]; let prev=null;
+    for(const r of R){ const y= q==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : (r.kind==='aio'?0:num(r[q])||0); if(prev!=null) d.push({x:r.ts,y:prev}); d.push({x:r.ts,y}); prev=y }
+    if(prev!=null) d.push({x:to,y:prev});
+    dd.push({label:q==='aio'?'All In One':P[q].n,data:d.filter(z=>!from||z.x>=from-1),borderColor:q==='aio'?'#2ec4d6':TRI_COL[q],pointRadius:0,borderWidth:2}) }
+  const c3=document.getElementById('cDose');
+  if(c3) charts.dose=new Chart(c3,{type:'line',data:{datasets:dd},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,beginAtZero:true}}}});
+}
+function drawSpark(){
+  const el=document.getElementById('spark'); if(!el) return; if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
+  Chart.defaults.locale='it-IT'; const from=Date.now()-60*DAY, T=testsWith('kh').filter(t=>t.ts>=from);
+  if(!T.length){ el.parentElement.innerHTML='<h2>KH ultimi 60 giorni</h2><p class="mut small">Nessun test KH nel periodo.</p>'; return }
+  const [lo,hi]=tgt('kh');
+  charts.spark=new Chart(el,{type:'line',data:{datasets:[{data:T.map(t=>({x:t.ts,y:num(t.v.kh)})),borderColor:'#f08c3a',backgroundColor:'#f08c3a',pointRadius:3,tension:.25,borderWidth:2},
+    {data:[{x:from,y:lo},{x:Date.now(),y:lo}],borderColor:'#3fcf8e66',borderDash:[5,4],pointRadius:0,borderWidth:1},{data:[{x:from,y:hi},{x:Date.now(),y:hi}],borderColor:'#3fcf8e66',borderDash:[5,4],pointRadius:0,borderWidth:1}]},
+    options:{animation:false,plugins:{legend:{display:false}},scales:{x:xTime(from,Date.now()),y:AX}}});
+}
+
+function drawStart(){
+  const el=document.getElementById('cStart'); if(!el) return; const si=startInfo();
+  const ks=[['nh4','#ef5d5d','y'],['no2','#f4b942','y'],['no3','#3fcf8e','y2']];
+  const ds=ks.map(([p,c,ax])=>({label:P[p].n,data:testsWith(p).filter(t=>t.ts>=si.st).map(t=>({x:t.ts,y:num(t.v[p])})),borderColor:c,backgroundColor:c,pointRadius:3,tension:.2,borderWidth:2,yAxisID:ax})).filter(d=>d.data.length);
+  if(!ds.length){ el.outerHTML='<p class="small mut">Inserisci i test di ammoniaca, nitriti e nitrati per vedere la curva dell\'avvio.</p>'; return }
+  if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
+  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+  charts.start=new Chart(el,{type:'line',data:{datasets:ds},options:{animation:false,plugins:{legend:{labels:{boxWidth:10}}},scales:{x:xTime(si.st,Math.max(Date.now(),si.end||addDays(Date.now(),3))),y:{...AX,beginAtZero:true,title:{display:true,text:'NH₄ / NO₂'}},y2:{...AX,beginAtZero:true,position:'right',grid:{display:false},title:{display:true,text:'NO₃'}}}}});
+}
+function drawTds(){
+  const el=document.getElementById('cTds'); if(!el) return; const lr=lastEv('resin'); const from=lr?lr.ts:Date.now()-180*DAY;
+  const pts=S.events.filter(e=>e.type==='tds'&&e.ts>=from).sort(byTs).map(e=>({x:e.ts,y:num(e.tds)}));
+  if(!pts.length){ el.outerHTML='<p class="small mut" style="margin-top:8px">Nessuna lettura TDS da mostrare.</p>'; return }
+  if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
+  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+  const mx=num(S.settings.tdsMax)||3, x0=lr?lr.ts:pts[0].x-DAY, x1=Math.max(Date.now(),x0+7*DAY);
+  charts.tds=new Chart(el,{type:'line',data:{datasets:[{data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:3,stepped:true,borderWidth:2},
+    {data:[{x:x0,y:mx},{x:x1,y:mx}],borderColor:'#ef5d5d99',borderDash:[5,4],pointRadius:0,borderWidth:1.2}]},
+    options:{animation:false,plugins:{legend:{display:false}},scales:{x:xTime(x0,x1),y:{...AX,beginAtZero:true,suggestedMax:mx+1,ticks:{...AX.ticks,stepSize:1}}}}});
+}
+
+
+/* ---------- Navigazione ---------- */
+let sub=''; const lastSub={};
+const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
+const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
+const MENU_VIEWS={dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
+function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
+const VIEWS={
+  home:vHome,
+  param:()=>segBar('param')+(sub==='grafici'?vGraf():sub==='storico'?vTestHist():vTest()),
+  vasca:()=>segBar('vasca')+(sub==='foto'?vFoto():vAnimali()),
+  menu:vMenu,
+  dosi:()=>backBar()+vDosi(),
+  manut:()=>backBar()+vManut(),
+  osmosi:()=>backBar()+vOsmo(),
+  diario:()=>backBar()+vDiario(),
+  impostazioni:()=>backBar()+vSet(),
+  sync:()=>backBar()+vSyncPage(),
+};
+function parseHash(){
+  let hsh=(location.hash||'').slice(1); if(ALIAS[hsh]) hsh=ALIAS[hsh];
+  let [v,sb]=hsh.split('-'); if(!VIEWS[v]) v='home';
+  if(SUBS[v]){ if(!SUBS[v].some(x=>x[0]===sb)) sb=SUBS[v][0][0] } else sb='';
+  return [v,sb];
+}
+function applyRoute(){
+  const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
+  view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
+  if(changed){ doneOpen=null; editTask=null; photoSel=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  const tab= v==='home'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
+  document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
+  closeSheet(); render(); if(changed) window.scrollTo(0,0);
+}
+function go(target){
+  if(target==='plus'){ openSheet(); return }
+  if(ALIAS[target]) target=ALIAS[target];
+  if(('#'+target)===location.hash || (target==='home'&&!location.hash)) applyRoute();
+  else location.hash=target;
+}
+window.addEventListener('hashchange',applyRoute);
+function vMenu(){
+  const over=S.tasks.filter(t=>dueDiff(t)<0).length, today=S.tasks.filter(t=>dueDiff(t)===0).length;
+  const lt=lastEv('tds'); const curAio=rateAt('kh',Date.now());
+  const items=[
+    ['dosi','💧','Dosaggio',isAIO()?`All In One · ${fmt(curAio,1)} ml/g`:'Balling 3 parti · consumi e dosi'],
+    ['manut','🔧','Manutenzione',S.tasks.length?(over?`${over} scadut${over>1?'e':'a'}`:today?`${today} da fare oggi`:'tutto in regola'):'scadenze e calendario'],
+    ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
+    ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
+    ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
+    LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
+  ];
+  return `<div style="margin-top:6px">`+items.map(([k,i,t,d])=>`<div class="mitem" data-go="${k}"><i>${i}</i><div class="t"><b>${t}</b><span>${d}</span></div><span class="mut">›</span></div>`).join('')+`</div>`;
+}
+let evPreset=null;
+function openSheet(){
+  const el=document.getElementById('sheet');
+  const A=[['test','🧪','Test'],['dose','💧','Dose'],['wc','🔄','Cambio acqua'],['tds','🚰','TDS'],['photo','📷','Foto'],['lv','🐠','Animale'],['maint','🔧','Manutenz.'],['note','📝','Nota']];
+  el.innerHTML=`<div class="pane"><div class="row" style="justify-content:space-between;margin-bottom:12px"><b>Aggiungi</b><button class="btn sm sec" id="shX">✕</button></div><div class="acts">${A.map(([k,i,l])=>`<button data-qa="${k}"><i>${i}</i>${l}</button>`).join('')}</div></div>`;
+  el.classList.remove('hide');
+  el.onclick=e=>{ if(e.target===el) closeSheet() };
+  document.getElementById('shX').onclick=closeSheet;
+  el.querySelectorAll('[data-qa]').forEach(b=>b.onclick=()=>{ const k=b.dataset.qa; closeSheet();
+    if(k==='test') go('param-nuovo');
+    else if(k==='dose') go('dosi');
+    else if(k==='wc'){ const t=S.tasks.find(x=>x.wc); if(t){ go('manut'); setTimeout(()=>{ doneOpen=t.id; render(); document.getElementById('fDone')?.scrollIntoView({block:'center'}) },60) } else { evPreset='wc'; go('diario') } }
+    else if(k==='tds'){ go('osmosi'); setTimeout(()=>document.querySelector('#fTds input')?.focus(),80) }
+    else if(k==='photo') document.getElementById('photoIn').click();
+    else if(k==='lv'){ go('vasca-animali'); setTimeout(()=>{ lvEdit={}; lvPendingPhoto=null; render() },60) }
+    else if(k==='maint'){ go('manut') }
+    else { evPreset=k; go('diario') } });
+}
+function closeSheet(){ const el=document.getElementById('sheet'); if(el) el.classList.add('hide') }
+
+/* ---------- Eventi UI ---------- */
+document.getElementById('nav').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; const v=b.dataset.v; go(v==='param'||v==='vasca'?v+'-'+(lastSub[v]||SUBS[v][0][0]):v) });
+
+function formVals(f){ const o={}; new FormData(f).forEach((v,k)=>o[k]=v); return o }
+function bind(){
+  const app=document.getElementById('app');
+  app.querySelectorAll('[data-go]').forEach(b=>b.onclick=e=>{e.preventDefault();go(b.dataset.go)});
+  app.querySelectorAll('[data-graf]').forEach(b=>b.onclick=()=>{const p=b.dataset.graf;go('param-grafici');setTimeout(()=>{const el=document.getElementById('g_'+p);if(el)el.scrollIntoView({block:'start'})},80)});
+  app.querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>go(view+'-'+b.dataset.sub));
+  app.querySelectorAll('[data-gr]').forEach(b=>b.onclick=()=>{grafRange=+b.dataset.gr;render()});
+  app.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{confirmKey=b.dataset.ask;render();setTimeout(()=>{if(confirmKey===b.dataset.ask){confirmKey=null;render()}},4000)});
+  app.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const [c,id]=b.dataset.del.split(':');confirmKey=null;await delItem(c,id);toast('Eliminato');render()});
+  app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{editTest=clone(S.tests.find(t=>t.id===b.dataset.edit));render();window.scrollTo(0,0)});
+  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{ if(S.settings.mode===b.dataset.mode) return; S.settings=Object.assign(clone(S.settings),{mode:b.dataset.mode}); await saveSettings(); toast(b.dataset.mode==='aio'?'Modalità All In One':'Modalità Balling 3 parti') });
+  app.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{go('diario')});
+  const bk=document.getElementById('bkClose'); if(bk) bk.onclick=()=>{ snoozeBackup(); render() };
+  const ce=document.getElementById('cancelEdit'); if(ce) ce.onclick=()=>{editTest=null;render()};
+
+  const fT=document.getElementById('fTest');
+  if(fT) fT.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fT); const v={};
+    for(const p of Object.keys(P)){ const n=num(o[p]); if(n!=null) v[p]=n }
+    if(!Object.keys(v).length){ toast('Inserisci almeno un valore'); return }
+    const item={id:editTest?.id||uid(),ts:fromInput(o.ts),v,note:(o.note||'').trim()};
+    if(await saveItem('tests',item)){ if(!editTest) await autoDone('test',item.ts); editTest=null; toast('Test salvato'); render() } };
+
+  const fD=document.getElementById('fDose');
+  if(fD) fD.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fD);
+    const item = isAIO()
+      ? {id:uid(),ts:fromInput(o.ts),kind:'aio',aio:num(o.aio)||0,note:(o.note||'').trim()}
+      : {id:uid(),ts:fromInput(o.ts),kind:'balling',ca:num(o.ca)||0,kh:num(o.kh)||0,mg:num(o.mg)||0,note:(o.note||'').trim()};
+    if(await saveItem('doses',item)){ toast('Dose salvata'); render() } };
+
+  const ap=document.getElementById('addPhoto')||document.getElementById('homeAddPhoto'); if(ap) ap.onclick=()=>document.getElementById('photoIn').click();
+  const hp=document.getElementById('homeAddPhoto'); if(hp) hp.onclick=()=>document.getElementById('photoIn').click();
+  const cb=document.getElementById('cmpBtn'); if(cb) cb.onclick=()=>{ photoSel=photoSel?null:[]; render() };
+  const cf=document.getElementById('cmpFirst'); if(cf) cf.onclick=()=>openCompare(S.photos[S.photos.length-1].id,S.photos[0].id);
+  app.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{ const id=b.dataset.ph;
+    if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
+      if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
+    openViewer(id) });
+  bindSync(); bindAnimali();
+  const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
+  if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
+  if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
+  const sd=document.getElementById('seedTasks');
+  if(sd) sd.onclick=async()=>{ sd.disabled=true; for(const t0 of DEFAULT_TASKS){ const t=Object.assign({id:uid()},clone(t0)); if(t.wc&&bacterOn()) Object.assign(t,{name:'Cambio acqua 10% + batteri',kind:'monthly',days:[15,30],bacter:true}); if(!await saveItem('tasks',t)) break } toast('Scadenze create'); render() };
+  app.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===b.dataset.done); if(!t) return;
+    if(t.wc){ doneOpen=t.id; render(); return }
+    const now=Date.now(); await saveItem('tasks',Object.assign(clone(t),{lastDone:now}));
+    await saveItem('events',{id:uid(),ts:now,type:'maint',note:t.name}); toast('Fatto ✓'); render() });
+  const dc=document.getElementById('doneCancel'); if(dc) dc.onclick=()=>{ doneOpen=null; render() };
+  const fDn=document.getElementById('fDone');
+  if(fDn) fDn.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fDn); const t=S.tasks.find(x=>x.id===fDn.dataset.id); const L=num(o.liters); if(!L){ toast('Indica i litri'); return }
+    const ts=fromInput(o.ts); const note='Cambio programmato'+(o.bact?' · '+bacterTxt():'');
+    if(!await saveItem('events',{id:uid(),ts,type:'wc',liters:L,note})) return;
+    if(t) await saveItem('tasks',Object.assign(clone(t),{lastDone:ts})); doneOpen=null; toast('Cambio registrato ✓'); render() };
+  app.querySelectorAll('[data-etask]').forEach(b=>b.onclick=()=>{ editTask=clone(S.tasks.find(x=>x.id===b.dataset.etask)); render() });
+  const tkc=document.getElementById('tkCancel'); if(tkc) tkc.onclick=()=>{ editTask=null; render() };
+  const fTk=document.getElementById('fTask');
+  if(fTk){ const k=document.getElementById('tkKind'); const sy=()=>{ document.getElementById('tkEvery').classList.toggle('hide',k.value!=='interval'); document.getElementById('tkDays').classList.toggle('hide',k.value!=='monthly') }; k.onchange=sy; sy();
+    fTk.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fTk); if(!(o.name||'').trim()){ toast('Dai un nome'); return }
+      const t=Object.assign(editTask&&editTask.id?clone(editTask):{id:uid()},{name:o.name.trim(),kind:o.kind,wc:!!o.wc,bacter:!!o.bacter});
+      if(o.kind==='interval'){ t.every=Math.max(1,Math.round(num(o.every)||7)); delete t.days } else { t.days=String(o.days||'').split(/[^0-9]+/).map(Number).filter(d=>d>=1&&d<=31); if(!t.days.length){ toast('Indica i giorni'); return } delete t.every }
+      if(await saveItem('tasks',t)){ editTask=null; toast('Scadenza salvata'); render() } } }
+  const ics=document.getElementById('icsBtn'); if(ics) ics.onclick=async()=>{ const r=await saveFile('reeflog-scadenze.ics',buildIcs(),'text/calendar'); toast(r&&r!=='abort'?'File calendario pronto: aprilo per importarlo':'Non riuscito') };
+  const fTd=document.getElementById('fTds');
+  if(fTd) fTd.onsubmit=async e=>{ e.preventDefault(); const v=num(formVals(fTd).tds); if(v==null){ toast('Inserisci il TDS'); return } const ts=Date.now();
+    if(await saveItem('events',{id:uid(),ts,type:'tds',tds:v,note:''})){ await autoDone('tds',ts); const mx=num(S.settings.tdsMax)||3; toast(v>=mx?'TDS alto: cambia le resine':'Lettura salvata'); render() } };
+  app.querySelectorAll('[data-ro]').forEach(b=>b.onclick=async()=>{ if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Confermi?'; return }
+    if(await saveItem('events',{id:uid(),ts:Date.now(),type:b.dataset.ro,note:''})){ toast(RO_TYPES[b.dataset.ro]+' ✓'); render() } });
+  const fE=document.getElementById('fEv');
+  if(fE){ const sel=document.getElementById('evType'); if(evPreset){ sel.value=evPreset; evPreset=null; setTimeout(()=>fE.scrollIntoView({block:'start'}),30) }
+    const sync=()=>{ document.getElementById('evWc').classList.toggle('hide',sel.value!=='wc'); document.getElementById('evDose').classList.toggle('hide',sel.value!=='dose'); document.getElementById('evTds').classList.toggle('hide',sel.value!=='tds') };
+    sel.onchange=sync; sync();
+    fE.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fE);
+      const item={id:uid(),ts:fromInput(o.ts),type:o.type,note:(o.note||'').trim()};
+      if(o.type==='wc'){ item.liters=num(o.liters); if(!item.liters){toast('Indica i litri');return} }
+      if(o.type==='dose'){ const a=num(o.aio)||0; const sep=TRI.some(p=>num(o[p]));
+        if(a&&sep){ // AIO + singoli: due voci separate
+          const it2={id:uid(),ts:item.ts,type:'dose',kind:'balling',note:item.note}; for(const p of TRI) it2[p]=num(o[p])||0;
+          if(!await saveItem('events',it2)) return; }
+        if(a){ item.kind='aio'; item.aio=a } else { item.kind='balling'; for(const p of TRI) item[p]=num(o[p])||0 }
+        if(!a&&!sep){toast('Indica almeno una dose');return} }
+      if(o.type==='tds'){ item.tds=num(o.tds); if(item.tds==null){toast('Indica il TDS');return} }
+      if(['maint','live','note'].includes(o.type)&&!item.note){ toast('Aggiungi una descrizione'); return }
+      if(await saveItem('events',item)){ if(o.type==='tds') await autoDone('tds',item.ts); toast('Aggiunto'); render() } };
+  }
+
+  const fS=document.getElementById('fSet');
+  if(fS){
+    const sm=document.getElementById('stMode'); sm.onchange=()=>{ document.getElementById('stRow').classList.toggle('hide',sm.value==='none'); document.getElementById('stDays').classList.toggle('hide',sm.value!=='fixed');
+      document.getElementById('stHelp').textContent= sm.value==='cycle'?'Il riquadro in Home si chiude da solo quando ammoniaca e nitriti risultano a zero in due test consecutivi.':sm.value==='fixed'?'Il riquadro in Home conta giorni e settimane sul totale indicato.':'Nessun riquadro di avvio in Home.' };
+    const bo=document.getElementById('bacOn'); bo.onchange=()=>document.getElementById('bacRow').classList.toggle('hide',!bo.checked);
+    document.getElementById('calcRecipe').onclick=()=>{
+      const g=id=>num(document.getElementById(id).value)||0;
+      const ca=g('r_ca')*0.2726, kh=g('r_hco3')*11.90/1000+g('r_co3')*18.87/1000, mg=g('r_mgcl')*0.1196+g('r_mgso')*0.0986;
+      if(ca) fS.c_ca.value=fmt(ca,2); if(kh) fS.c_kh.value=fmt(kh,3); if(mg) fS.c_mg.value=fmt(mg,2);
+      toast('Valori calcolati: ricordati di salvare');
+    };
+    fS.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fS); const s=clone(S.settings);
+      s.volume=num(o.volume)||s.volume;
+      s.conc={ca:num(o.c_ca)??'',kh:num(o.c_kh)??'',mg:num(o.c_mg)??''};
+      s.salt={ca:num(o.s_ca)??'',kh:num(o.s_kh)??'',mg:num(o.s_mg)??''};
+      s.aio={ca:num(o.a_ca)??'',kh:num(o.a_kh)??'',mg:num(o.a_mg)??''};
+      s.startMode=o.startMode||'none'; s.startDate=o.startDate||''; s.startDays=Math.max(1,Math.round(num(o.startDays)||28)); s.bacterOn=!!o.bacterOn; s.bactName=(o.bactName||'').trim()||'Bacter Mix + Bacter Nitrix'; s.bacterPer250=num(o.bacterPer250)??5; s.tdsMax=num(o.tdsMax)??3;
+      if(s.startMode!=='none'&&!s.startDate){ toast('Indica la data di avvio'); return }
+      s.targets={}; s.showParams=[];
+      for(const p of Object.keys(P)){ const lo=num(o['lo_'+p]),hi=num(o['hi_'+p]); if(lo!=null&&hi!=null) s.targets[p]=[Math.min(lo,hi),Math.max(lo,hi)]; if(o['show_'+p]) s.showParams.push(p) }
+      S.settings=s; await saveSettings(); toast('Impostazioni salvate') };
+  }
+  if(document.getElementById('exp')){
+    document.getElementById('exp').onclick=async()=>{
+      const withPh=document.getElementById('bkPhotos')?.checked; if(withPh&&S.photos.length) toast('Preparo le foto…');
+      const photos=withPh? await photosForBackup() : undefined;
+      const data=JSON.stringify({app:'reeflog',v:1,exported:new Date().toISOString(),tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings,photos},null,1);
+      const fn=`reeflog-backup-${new Date().toISOString().slice(0,10)}.json`;
+      if(CAP()){ const r=await saveFile(fn,data,'application/json'); if(r==='shared'){ localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup pronto'); render(); return } if(r==='abort') return }
+      try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); toast('Backup pronto'); return } }catch(err){}
+      try{ const f=new File([data],fn,{type:'application/json'});
+        if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:'Backup Reef Log'}); localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup condiviso'); render(); return } }catch(err){ if(err&&err.name==='AbortError') return }
+      try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data],{type:'application/json'})); a.download=fn; document.body.appendChild(a); a.click(); a.remove(); localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup scaricato'); render(); return }catch(err){}
+      const box=document.getElementById('expBox'); box.value=data; box.classList.remove('hide'); box.select();
+      try{ await navigator.clipboard.writeText(data); toast('Backup copiato negli appunti') }catch(err){ toast('Copia il testo qui sotto') }
+    };
+    document.getElementById('csv').onclick=async()=>{
+      const ks=Object.keys(P); const rows=[['data',...ks,'note'].join(';')];
+      for(const t of [...S.tests].sort(byTs)) rows.push([new Date(t.ts).toLocaleString('it-IT'),...ks.map(k=>t.v[k]!=null?String(t.v[k]).replace('.',','):''),'"'+(t.note||'').replace(/"/g,'""')+'"'].join(';'));
+      const box=document.getElementById('expBox'); box.value=rows.join('\n'); box.classList.remove('hide');
+      try{ await navigator.clipboard.writeText(box.value); toast('CSV copiato') }catch(err){ box.select(); toast('Copia il testo qui sotto') }
+    };
+    document.getElementById('imp').onclick=()=>document.getElementById('fileIn').click();
+  }
+}
+document.getElementById('fileIn').onchange=async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  let j; try{ j=JSON.parse(await f.text()) }catch(err){ toast('File non valido'); return }
+  if(!j||j.app!=='reeflog'){ toast('Non è un backup Reef Log'); return }
+  toast('Importazione in corso…');
+  let n=0;
+  for(const c of ['tests','doses','events','tasks','livestock']) for(const it of (j[c]||[])){ if(it&&it.id&&(c==='tasks'||c==='livestock'||isFinite(it.ts))){ if(S.mode==='db'){ try{ await base.collection(c).doc(String(it.id)).set(it); n++ }catch(err){ handleErr(err); return } } else { const a=S[c]; const i=a.findIndex(x=>x.id===it.id); if(i>=0)a[i]=it; else a.push(it); n++ } } }
+  let np=0; if(Array.isArray(j.photos)) for(const p of j.photos){ try{ if(!p||!p.id||!p.data) continue; const blob=await (await fetch(p.data)).blob(); await putPhoto({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null,blob}); np++ }catch(err){} }
+  if(np){ await loadPhotos(); n+=np }
+  if(j.settings){ S.settings=Object.assign(clone(DEF_SETTINGS),j.settings); await saveSettings() }
+  if(S.mode==='local') lsSave();
+  snoozeBackup();
+  if(sbUser) enqueueAll();
+  toast(`Importati ${n} elementi`); render();
+};
+
+document.getElementById('lvPhotoIn').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f||!lvEdit) return;
+  try{ const url=URL.createObjectURL(f); const img=await loadImg(url); const blob=await resizeTo(img,1600,0.82); const thumb=await resizeTo(img,360,0.7,'url'); URL.revokeObjectURL(url);
+    const keep=lvFormSnapshot(); lvPendingPhoto={blob,thumb}; render(); lvFormRestore(keep) }catch(err){ toast('Foto non leggibile') } };
+function lvFormSnapshot(){ const f=document.getElementById('fLv'); return f?formVals(f):null }
+function lvFormRestore(o){ const f=document.getElementById('fLv'); if(!f||!o) return; for(const [k,v] of Object.entries(o)){ const el=f.elements[k]; if(el) el.value=v } const sel=document.getElementById('lvSt'); if(sel) document.getElementById('lvEndF').classList.toggle('hide',sel.value==='alive') }
+document.getElementById('photoIn').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addPhotos(fs) };
+window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render() } });
+applyRoute(); initStore(); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
+if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+</script>
+</body>
+</html>
