@@ -1,0 +1,6 @@
+{
+  "appId": "it.reeflog.app",
+  "appName": "Reef Log",
+  "webDir": "www",
+  "android": { "backgroundColor": "#07131c" }
+}
