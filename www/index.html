@@ -238,7 +238,15 @@ function isTyping(){ const a=document.activeElement; return a && (a.tagName==='I
 document.addEventListener('focusout',()=>{ setTimeout(()=>{ if(_pendingRender && !isTyping()){ _pendingRender=false; render() } },50) });
 
 /* ---------- Calcoli triade ---------- */
-function isAIO(){ return S.settings.mode==='aio' }
+function dmode(){ return S.settings.mode||'balling' }
+function isAIO(){ return dmode()==='aio' }
+function isReactor(){ return dmode()==='reactor' }
+const CA_PER_DKH=7.15; // ppm di calcio per 1 dKH (stessa quantità di meq)
+function valAt(p,ts){ // valore stimato del parametro in vasca a una certa data (interpolato dai test)
+  const T=testsWith(p); if(!T.length){ const [lo,hi]=tgt(p); return (lo+hi)/2 }
+  if(ts<=T[0].ts) return num(T[0].v[p]); if(ts>=T[T.length-1].ts) return num(T[T.length-1].v[p]);
+  for(let i=1;i<T.length;i++) if(ts<=T[i].ts){ const a=T[i-1],b=T[i]; return num(a.v[p])+(num(b.v[p])-num(a.v[p]))*(ts-a.ts)/(b.ts-a.ts) }
+}
 function ballEff(p){ // aumento del parametro (unità parametro · L) per ml di soluzione Balling
   const c=num(S.settings.conc?.[p]); if(c==null||c<=0) return null;
   return p==='kh' ? c*2.8 : c; // KH: meq/ml → dKH·L (1 meq/L = 2,8 dKH)
@@ -251,9 +259,18 @@ function testsWith(p){ return S.tests.filter(t=>num(t.v?.[p])!=null).sort(byTs) 
 function regimens(){ return [...S.doses].sort(byTs) }
 function curReg(ts){ let r=null; for(const d of regimens()){ if(d.ts<=ts) r=d; else break } return r }
 // ml/g del prodotto che fornisce p secondo la modalità attuale
-function rateAt(p,ts){ const r=curReg(ts); if(!r) return 0; if(isAIO()) return r.kind==='aio'?(num(r.aio)||0):0; return r.kind==='aio'?0:(num(r[p])||0) }
+function rateAt(p,ts){ const r=curReg(ts); if(!r) return 0; if(isAIO()) return r.kind==='aio'?(num(r.aio)||0):0; if(isReactor()) return r.kind==='reactor'?(num(r.flow)||0):0; return (r.kind==='aio'||r.kind==='reactor')?0:(num(r[p])||0) }
+function reactorAdd(rec,p,ts){ // apporto giornaliero del reattore (unità·L/giorno); null se mancano dati
+  const Ld=(num(rec.flow)||0)*1.44; // ml/min → L/giorno
+  if(p==='mg'){ const ml=num(rec.mg)||0; if(!ml) return 0; const e=ballEff('mg'); return e==null?null:ml*e }
+  const ek=num(rec.effKH); if(!Ld) return 0; if(ek==null) return null;
+  if(p==='kh') return Ld*(ek-valAt('kh',ts));
+  const ec=num(rec.effCa); if(ec!=null) return Ld*(ec-valAt('ca',ts));
+  return Ld*(ek-valAt('kh',ts))*CA_PER_DKH;
+}
 // effetto di un record (regime → per giorno, evento → totale) sul parametro p; null se manca la concentrazione
-function recEffect(rec,p){
+function recEffect(rec,p,ts){
+  if(rec.kind==='reactor'){ const a=reactorAdd(rec,p,ts??rec.ts); return {ml:p==='mg'?(num(rec.mg)||0):(num(rec.flow)||0)*1.44,eff:a} }
   if(rec.kind==='aio'){ const ml=num(rec.aio)||0; if(!ml) return {ml:0,eff:0}; const e=aioEff(p); return {ml,eff:e==null?null:ml*e} }
   const ml=num(rec[p])||0; if(!ml) return {ml:0,eff:0}; const e=ballEff(p); return {ml,eff:e==null?null:ml*e};
 }
@@ -262,7 +279,7 @@ function addedBetween(p,t1,t2){ // ritorna {ml, add (unità·L) | null}
   for(let i=0;i<R.length;i++){
     const s=R[i].ts, e=i+1<R.length?R[i+1].ts:Infinity;
     const ov=Math.min(e,t2)-Math.max(s,t1);
-    if(ov>0){ const r=recEffect(R[i],p); ml+=r.ml*ov/DAY; if(r.eff==null) ok=false; else add+=r.eff*ov/DAY }
+    if(ov>0){ const r=recEffect(R[i],p,(Math.min(e,t2)+Math.max(s,t1))/2); ml+=r.ml*ov/DAY; if(r.eff==null) ok=false; else add+=r.eff*ov/DAY }
   }
   for(const ev of S.events) if(ev.type==='dose' && ev.ts>t1 && ev.ts<=t2){ const r=recEffect(ev,p); ml+=r.ml; if(r.eff==null) ok=false; else add+=r.eff }
   return {ml, add: ok?add:null};
@@ -482,7 +499,8 @@ const GUIDE=[
   <p>In <b>Grafici</b> c'è un grafico per ogni parametro spuntato in Impostazioni, con la fascia verde del range. I pulsanti in alto cambiano il periodo. In fondo ci sono i consumi della triade e la storia delle dosi.</p>`},
  {id:'triade',i:'💧',t:'Triade e dosaggio',b:`<p>In <b>Menu → Dosaggio</b> scegli il metodo:</p>
   <ul><li><b>Balling 3 parti</b>: tre soluzioni separate. In Impostazioni inserisci la concentrazione di ognuna (mg/ml per Ca e Mg, meq/ml per il KH), oppure calcolala dalla ricetta in grammi per litro.</li>
-  <li><b>All In One</b>: una sola soluzione. In Impostazioni inserisci di quanto alza <b>1 ml in 100 L</b>. Se l'etichetta parla di 10 ml, dividi per 10.</li></ul>
+  <li><b>All In One</b>: un unico prodotto che apporta calcio, KH e magnesio insieme, in proporzioni fisse. Si regola <b>una sola dose</b>. In Impostazioni inserisci di quanto alza <b>1 ml in 100 L</b> ciascun elemento; se l'etichetta parla di 10 ml, dividi per 10. In Home vedi, per ogni elemento, consumo, apporto della dose attuale e bilancio (in equilibrio, in accumulo o in calo).</li>
+  <li><b>Reattore di calcio</b>: registra la <b>portata</b> dell'effluente (ml/min) e il suo <b>KH</b>, e se lo misuri anche il calcio. L'apporto si calcola come portata × (valore dell'effluente − valore in vasca); se il calcio non è misurato si stima dal KH. Il magnesio integrato a parte usa la soluzione Mg delle Impostazioni. In Home trovi la <b>portata consigliata</b> per coprire il consumo di KH.</li></ul>
   <p><b>Registra ogni variazione</b> della dose giornaliera con "Imposta nuova dose": l'app calcola quanto hai dosato nel tempo. Le aggiunte una tantum si registrano invece come "Dose manuale" con il ＋.</p>
   <p><b>Come si calcola il consumo</b>: tra due test consecutivi, consumo = valore iniziale + quanto hai dosato + effetto dei cambi d'acqua − valore finale, diviso per i giorni. In Home vedi la media degli ultimi 30 giorni; "Bilancio tra test" mostra il dettaglio.</p>
   <p><b>Dose suggerita</b>: la dose giornaliera che compensa il consumo misurato. Con l'All In One è calcolata sul KH, e l'app ti avvisa se calcio o magnesio tenderebbero a salire o a calare.</p>
@@ -711,8 +729,9 @@ function saveQ(){ try{ localStorage.setItem('reeflog.queue',JSON.stringify(Q)) }
 function lastSyncTs(){ try{ return +localStorage.getItem('reeflog.lastSync')||0 }catch(e){ return 0 } }
 function enqueue(coll,id,op){ if(!id) return; Q[coll+':'+id]=op; saveQ(); scheduleSync() }
 function enqueueAll(){ for(const c of ['tests','doses','events','tasks','livestock']) for(const it of S[c]) Q[c+':'+it.id]='put'; Q['settings:main']='put'; for(const p of allPhotoMetas()) Q['photos:'+p.id]='put'; saveQ(); scheduleSync() }
-function syncLabel(){ if(LOCAL_ONLY) return 'sul telefono'; if(!sbUser) return 'locale'; if(!navigator.onLine) return '⚠︎ offline'; if(syncing) return '⟳ sincronizzo…'; if(syncErr) return '⚠︎ errore sync'; const n=Object.keys(Q).length; return n?`⟳ ${n} in attesa`:'☁︎ sincronizzato' }
-function updHdr(){ const el=document.getElementById('hdrSub'); if(el) el.innerHTML=`${vol()} L netti<br>${syncLabel()}` }
+function syncLabel(){ if(LOCAL_ONLY) return ''; if(!sbUser) return 'locale'; if(!navigator.onLine) return '⚠︎ offline'; if(syncing) return '⟳ sincronizzo…'; if(syncErr) return '⚠︎ errore sync'; const n=Object.keys(Q).length; return n?`⟳ ${n} in attesa`:'☁︎ sincronizzato' }
+function hdrHtml(){ const l=S.mode==='db'?'☁︎ sincronizzato':syncLabel(); return `${vol()} L netti${l?'<br>'+l:''}` }
+function updHdr(){ const el=document.getElementById('hdrSub'); if(el) el.innerHTML=hdrHtml() }
 let _st=null; function scheduleSync(ms=1500){ updHdr(); if(!sbUser) return; clearTimeout(_st); _st=setTimeout(sync,ms) }
 function loadScript(src){ return new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=src; sc.onload=res; sc.onerror=rej; document.head.appendChild(sc) }) }
 async function initSync(){
@@ -843,7 +862,7 @@ function render(){
   const app=document.getElementById('app');
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
   const hdr=document.getElementById('hdrSub');
-  hdr.innerHTML = `${vol()} L netti<br>${S.mode==='db'?'☁︎ sincronizzato':syncLabel()}`;
+  hdr.innerHTML = hdrHtml();
   let h='';
   if(S.mode==='local' && S.ready && !sbUser && backupDue()) h+=`<div class="banner">I dati sono salvati su questo dispositivo. ${lastBackup()?`Ultimo backup ${Math.floor((Date.now()-lastBackup())/DAY)} giorni fa`:'Non hai ancora fatto un backup'}: <a href="#" data-go="sync" style="color:#ffd98a">esporta ora</a>.<button id="bkClose" style="float:right;background:none;border:0;color:#ffd98a;font-size:18px;line-height:1;padding:0 0 0 10px">✕</button></div>`;
   if(S.mode==='db' && S.stale && !S.tests.length && !S.doses.length) h+=`<div class="banner">Caricamento dati…</div>`;
@@ -895,28 +914,7 @@ function vHome(){
   }
   h+=`</div>`;
   // Triade
-  h+=`<div class="card"><h2>Triade · ${isAIO()?'All In One':'Balling'}</h2><div class="tri"><div></div><div class="h">Dose attuale</div><div class="h">Consumo/g</div><div class="h">${isAIO()?'AIO per coprirlo':'Dose suggerita'}</div>`;
-  for(const p of TRI){
-    const eff=effPerMl(p), cons=avgCons(p), r=rateAt(p,Date.now());
-    const sugg = (cons!=null&&eff)? Math.max(0,cons*vol()/eff) : null;
-    h+=`<div><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div>
-        <div class="big">${fmt(r,1)} <small class="mut">ml/g</small></div>
-        <div>${cons!=null?`${fmt(cons,p==='kh'?2:1)} <small class="mut">${P[p].u}</small>`:'<span class="mut">–</span>'}</div>
-        <div>${sugg!=null?`<b>${fmt(sugg,1)}</b> <small class="mut">ml/g</small>`:'<span class="mut">–</span>'}</div>`;
-  }
-  h+=`</div>`;
-  if(isAIO()){
-    const s={}; for(const p of TRI){ const c=avgCons(p), e=aioEff(p); s[p]=(c!=null&&e)?Math.max(0,c*vol()/e):null }
-    if(s.kh!=null){
-      const r=rateAt('kh',Date.now());
-      h+=`<hr><div class="small">Dose AIO suggerita (sul consumo di KH): <b class="big">${fmt(s.kh,1)} ml/g</b> <span class="mut">(attuale ${fmt(r,1)})</span>`;
-      const notes=[];
-      for(const p of ['ca','mg']){ if(s[p]==null||s.kh<=0) continue; const d=(s.kh-s[p])/s[p];
-        if(Math.abs(d)>0.25) notes.push(`${P[p].n} ${d>0?'andrebbe in <b>accumulo</b>':'tenderebbe a <b>calare</b>'} (copre il ${fmt(100*s.kh/s[p],0)}% del consumo)`) }
-      h+= notes.length?`<div style="margin-top:4px;color:var(--warn)">Con questa dose: ${notes.join('; ')}. Valuta un'integrazione singola nel Diario.</div>`:`<div class="mut" style="margin-top:4px">Ca e Mg risultano in equilibrio con il KH.</div>`;
-      h+=`</div>`;
-    }
-  }
+  h+=homeDosing();
   const cCa=avgCons('ca'), cKh=avgCons('kh');
   if(cCa!=null&&cKh!=null&&cKh>0.05){
     const ratio=cCa/cKh;
@@ -924,11 +922,59 @@ function vHome(){
   }
   // correzioni
   let corr='';
-  for(const p of TRI){ const l=lastVal(p), eff=effPerMl(p); if(!l||!eff) continue; const [lo,hi]=tgt(p); const mid=(lo+hi)/2;
+  for(const p of (dmode()==='balling'?TRI:[])){ const l=lastVal(p), eff=effPerMl(p); if(!l||!eff) continue; const [lo,hi]=tgt(p); const mid=(lo+hi)/2;
     if(l.v<lo){ const ml=(mid-l.v)*vol()/eff; corr+=`<div>• ${P[p].n}: ${fmt(l.v,P[p].d)} sotto target → circa <b>${fmt(ml,0)} ml${isAIO()?' di AIO':''}</b> una tantum per arrivare a ${fmt(mid,P[p].d)}${p==='kh'&&(mid-l.v)>1?` <span class="mut">(dividi in ${Math.ceil(mid-l.v)} giorni: max ~1 dKH/giorno)</span>`:''}</div>` } }
   if(corr) h+=`<hr><div class="small"><div class="mut" style="margin-bottom:4px">Correzioni suggerite</div>${corr}</div>`;
-  if(!effPerMl('mg')||!effPerMl('ca')) h+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
+  if(dmode()==='balling'&&(!effPerMl('mg')||!effPerMl('ca')||!effPerMl('kh'))) h+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
   h+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div></div>`;
+  return h;
+}
+
+function balTxt(p,d){ // bilancio apporto-consumo
+  if(d==null) return '<span class="mut">–</span>';
+  const tol=p==='kh'?0.05:p==='ca'?0.5:1.5;
+  if(Math.abs(d)<=tol) return '<span style="color:var(--ok)">in equilibrio</span>';
+  return d>0?`<span style="color:var(--warn)">+${fmt(d,p==='kh'?2:1)} accumulo</span>`:`<span style="color:var(--bad)">${fmt(d,p==='kh'?2:1)} in calo</span>`;
+}
+function homeDosing(){
+  const mode=dmode(), V=vol(), now=Date.now();
+  if(mode==='balling'){
+    let h=`<div class="card"><h2>Triade · Balling</h2><div class="tri"><div></div><div class="h">Dose attuale</div><div class="h">Consumo/g</div><div class="h">Dose suggerita</div>`;
+    for(const p of TRI){ const eff=effPerMl(p), cons=avgCons(p), r=rateAt(p,now); const sugg=(cons!=null&&eff)?Math.max(0,cons*V/eff):null;
+      h+=`<div><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div><div class="big">${fmt(r,1)} <small class="mut">ml/g</small></div>
+        <div>${cons!=null?`${fmt(cons,p==='kh'?2:1)} <small class="mut">${P[p].u}</small>`:'<span class="mut">–</span>'}</div>
+        <div>${sugg!=null?`<b>${fmt(sugg,1)}</b> <small class="mut">ml/g</small>`:'<span class="mut">–</span>'}</div>` }
+    return h+`</div>`;
+  }
+  const reg=curReg(now);
+  if(mode==='aio'){
+    const dose=reg&&reg.kind==='aio'?num(reg.aio)||0:0, consKh=avgCons('kh'), eKh=aioEff('kh');
+    const sugg=(consKh!=null&&eKh)?Math.max(0,consKh*V/eKh):null;
+    let h=`<div class="card"><h2>Dosaggio · All In One</h2>
+      <div class="row" style="gap:18px"><div><div class="small mut">Dose attuale</div><div class="big" style="font-size:22px">${fmt(dose,1)} <small class="mut">ml/g</small></div></div>
+      <div><div class="small mut">Dose consigliata</div><div class="big" style="font-size:22px">${sugg!=null?fmt(sugg,1)+' <small class="mut">ml/g</small>':'–'}</div><div class="small mut">calcolata sul consumo di KH</div></div></div>
+      <div class="tri" style="margin-top:12px;grid-template-columns:auto 1fr 1fr 1.2fr"><div></div><div class="h">Consumo/g</div><div class="h">Apporto/g</div><div class="h">Bilancio</div>`;
+    for(const p of TRI){ const c=avgCons(p), e=aioEff(p), ap=e?dose*e/V:null;
+      h+=`<div><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div><div>${c!=null?fmt(c,p==='kh'?2:1):'–'}</div><div>${ap!=null?fmt(ap,p==='kh'?2:1):'–'}</div><div class="small">${balTxt(p,(c!=null&&ap!=null)?ap-c:null)}</div>` }
+    h+=`</div>`;
+    if(!eKh||!aioEff('ca')||!aioEff('mg')) h+=`<hr><div class="small mut">Inserisci i dati dell'etichetta del prodotto in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a>.</div>`;
+    const l=lastVal('kh'); if(l&&eKh){ const [lo,hi]=tgt('kh'), mid=(lo+hi)/2; if(l.v<lo){ const ml=(mid-l.v)*V/eKh; const side=['ca','mg'].filter(p=>aioEff(p)).map(p=>`${P[p].n} +${fmt(ml*aioEff(p)/V,0)} ppm`).join(', ');
+      h+=`<hr><div class="small">KH ${fmt(l.v,2)} sotto target → circa <b>${fmt(ml,0)} ml di AIO</b> una tantum per arrivare a ${fmt(mid,2)}${side?` <span class="mut">(alza anche ${side})</span>`:''}${(mid-l.v)>1?` <span class="mut">· dividi in ${Math.ceil(mid-l.v)} giorni</span>`:''}</div>` } }
+    return h;
+  }
+  // reattore di calcio
+  const flow=reg&&reg.kind==='reactor'?num(reg.flow)||0:0, ek=reg&&reg.kind==='reactor'?num(reg.effKH):null, consKh=avgCons('kh'), tk=valAt('kh',now);
+  const sugg=(consKh!=null&&ek!=null&&ek>tk)?consKh*V/(ek-tk)/1.44:null;
+  let h=`<div class="card"><h2>Dosaggio · Reattore di calcio</h2>
+    <div class="row" style="gap:18px"><div><div class="small mut">Portata effluente</div><div class="big" style="font-size:22px">${fmt(flow,1)} <small class="mut">ml/min</small></div></div>
+    <div><div class="small mut">KH effluente</div><div class="big" style="font-size:22px">${ek!=null?fmt(ek,1)+' <small class="mut">dKH</small>':'–'}</div></div>
+    <div><div class="small mut">Portata consigliata</div><div class="big" style="font-size:22px">${sugg!=null?fmt(sugg,1)+' <small class="mut">ml/min</small>':'–'}</div></div></div>
+    <div class="tri" style="margin-top:12px;grid-template-columns:auto 1fr 1fr 1.2fr"><div></div><div class="h">Consumo/g</div><div class="h">Apporto/g</div><div class="h">Bilancio</div>`;
+  for(const p of TRI){ const c=avgCons(p), a=reg&&reg.kind==='reactor'?reactorAdd(reg,p,now):null, ap=a!=null?a/V:null;
+    h+=`<div><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div><div>${c!=null?fmt(c,p==='kh'?2:1):'–'}</div><div>${ap!=null?fmt(ap,p==='kh'?2:1):'–'}</div><div class="small">${balTxt(p,(c!=null&&ap!=null)?ap-c:null)}</div>` }
+  h+=`</div>`;
+  if(!reg||reg.kind!=='reactor') h+=`<hr><div class="small mut">Registra portata e KH dell'effluente in <a href="#" data-go="dosi" style="color:var(--acc)">Dosaggio</a>.</div>`;
+  else if(reg.effCa==null) h+=`<div class="small mut" style="margin-top:6px">Apporto di calcio stimato dal KH dell'effluente (${fmt(CA_PER_DKH,1)} ppm per dKH): misura il Ca dell'effluente per un dato più preciso.</div>`;
   return h;
 }
 
@@ -959,33 +1005,47 @@ function vTestHist(){
 function delBtn(coll,id){ const k=coll+':'+id; return confirmKey===k?`<button class="btn sm danger" data-del="${k}">Elimina?</button>`:`<button class="btn sm sec" data-ask="${k}">🗑</button>` }
 
 function vDosi(){
-  const cur={ca:rateAt('ca',Date.now()),kh:rateAt('kh',Date.now()),mg:rateAt('mg',Date.now())};
-  const aio=isAIO();
+  const mode=dmode(), now=Date.now(), V=vol(), reg=curReg(now);
+  const cur={ca:rateAt('ca',now),kh:rateAt('kh',now),mg:rateAt('mg',now)};
+  const desc={balling:'Tre soluzioni separate per calcio, KH e magnesio, ognuna con la sua dose.',aio:'Un unico prodotto che apporta calcio, KH e magnesio insieme, in proporzioni fisse: si regola una sola dose.',reactor:'Il reattore scioglie il materiale calcareo e restituisce un effluente ricco di calcio e KH: si regolano portata e KH dell\'effluente. Il magnesio di solito si integra a parte.'};
   let h=`<div class="card"><h2>Metodo</h2><div class="chips" style="margin:0">
-    <button class="chip ${!aio?'on':''}" data-mode="balling">Balling 3 parti</button><button class="chip ${aio?'on':''}" data-mode="aio">All In One</button></div>
-    <div class="small mut" style="margin-top:6px">${aio?'Unica soluzione che apporta Ca, KH e Mg insieme (tipica dei nano reef).':'Tre soluzioni separate per Ca, KH e Mg.'} Puoi cambiare metodo quando vuoi: lo storico resta valido.</div></div>`;
-  h+=`<div class="card"><h2>Dose giornaliera attuale</h2>`;
-  if(aio) h+=`<div class="big" style="font-size:24px">${fmt(cur.kh,1)} <small class="mut">ml/g di All In One</small></div>`;
-  h+=`<div class="grid" style="margin-top:8px">`;
-  for(const p of TRI) h+=`<div class="tile" style="border-left-color:${TRI_COL[p]}"><div class="k">${P[p].n}</div><div class="v">${aio?'':fmt(cur[p],1)+' <small>ml/g</small>'}${aio&&effPerMl(p)?fmt(cur[p]*effPerMl(p)/vol(),p==='kh'?3:1)+` <small>${P[p].u}/g</small>`:''}</div><div class="d">${effPerMl(p)?(aio?'apporto giornaliero':`≈ ${fmt(cur[p]*effPerMl(p)/vol(),p==='kh'?3:2)} ${P[p].u}/g`):'conc. non impostata'}</div></div>`;
-  h+=`</div></div>`;
-  h+=`<div class="card"><h2>Imposta nuova dose</h2><form id="fDose">
-    <div class="f" style="margin-bottom:8px"><label>In vigore da</label><input type="datetime-local" name="ts" value="${toInput(Date.now())}"></div>
-    <div class="row">${aio?`<div class="f"><label>All In One ml/g</label><input name="aio" inputmode="decimal" value="${String(cur.kh).replace('.',',')}"></div>`:TRI.map(p=>`<div class="f"><label>${P[p].n} ml/g</label><input name="${p}" inputmode="decimal" value="${String(cur[p]).replace('.',',')}"></div>`).join('')}</div>
-    <div class="f" style="margin-top:8px"><label>Nota</label><input name="note" placeholder="es. aumento KH dopo calo"></div>
-    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva dose</button></div>
-    <div class="small mut" style="margin-top:6px">Registra ogni variazione della pompa dosometrica: l'app integra le dosi nel tempo per calcolare i consumi. Le dosi manuali una tantum vanno nel Diario.</div>
+    <button class="chip ${mode==='balling'?'on':''}" data-mode="balling">Balling 3 parti</button><button class="chip ${mode==='aio'?'on':''}" data-mode="aio">All In One</button><button class="chip ${mode==='reactor'?'on':''}" data-mode="reactor">Reattore di calcio</button></div>
+    <div class="small mut" style="margin-top:6px">${desc[mode]} Puoi cambiare metodo quando vuoi: lo storico resta valido.</div></div>`;
+  h+=`<div class="card"><h2>Situazione attuale</h2>`;
+  if(mode==='balling'){
+    h+=`<div class="grid">`; for(const p of TRI) h+=`<div class="tile" style="border-left-color:${TRI_COL[p]}"><div class="k">${P[p].n}</div><div class="v">${fmt(cur[p],1)} <small>ml/g</small></div><div class="d">${effPerMl(p)?`≈ ${fmt(cur[p]*effPerMl(p)/V,p==='kh'?3:2)} ${P[p].u}/g`:'conc. non impostata'}</div></div>`; h+=`</div>`;
+  }else if(mode==='aio'){
+    h+=`<div class="big" style="font-size:24px">${fmt(cur.kh,1)} <small class="mut">ml/g di All In One</small></div><div class="small mut" style="margin:4px 0 8px">Con questa dose il prodotto apporta ogni giorno:</div><div class="grid">`;
+    for(const p of TRI){ const e=aioEff(p); h+=`<div class="tile" style="border-left-color:${TRI_COL[p]}"><div class="k">${P[p].n}</div><div class="v">${e?fmt(cur.kh*e/V,p==='kh'?3:1):'–'} <small>${P[p].u}/g</small></div></div>` } h+=`</div>`;
+  }else{
+    const r=reg&&reg.kind==='reactor'?reg:null;
+    h+=`<div class="grid"><div class="tile"><div class="k">Portata</div><div class="v">${r?fmt(num(r.flow)||0,1):'–'} <small>ml/min</small></div><div class="d">${r?fmt((num(r.flow)||0)*1.44,1)+' L/giorno':''}</div></div>
+      <div class="tile" style="border-left-color:${TRI_COL.kh}"><div class="k">KH effluente</div><div class="v">${r&&r.effKH!=null?fmt(num(r.effKH),1):'–'} <small>dKH</small></div></div>
+      <div class="tile" style="border-left-color:${TRI_COL.ca}"><div class="k">Ca effluente</div><div class="v">${r&&r.effCa!=null?fmt(num(r.effCa),0):'–'} <small>ppm</small></div></div>
+      <div class="tile" style="border-left-color:${TRI_COL.mg}"><div class="k">Mg integrato</div><div class="v">${r?fmt(num(r.mg)||0,1):'–'} <small>ml/g</small></div></div></div>`;
+  }
+  h+=`</div>`;
+  const rr=reg&&reg.kind==='reactor'?reg:{};
+  h+=`<div class="card"><h2>Imposta ${mode==='reactor'?'nuova regolazione':'nuova dose'}</h2><form id="fDose">
+    <div class="f" style="margin-bottom:8px"><label>In vigore da</label><input type="datetime-local" name="ts" value="${toInput(now)}"></div>
+    <div class="row">${mode==='aio'?`<div class="f"><label>All In One ml/g</label><input name="aio" inputmode="decimal" value="${String(cur.kh).replace('.',',')}"></div>`
+      :mode==='reactor'?`<div class="f"><label>Portata ml/min</label><input name="flow" inputmode="decimal" value="${rr.flow!=null?String(rr.flow).replace('.',','):''}"></div><div class="f"><label>KH effluente</label><input name="effKH" inputmode="decimal" value="${rr.effKH!=null?String(rr.effKH).replace('.',','):''}"></div></div>
+        <div class="row" style="margin-top:8px"><div class="f"><label>Ca effluente (facolt.)</label><input name="effCa" inputmode="decimal" value="${rr.effCa!=null?String(rr.effCa).replace('.',','):''}"></div><div class="f"><label>Mg integrato ml/g (facolt.)</label><input name="mg" inputmode="decimal" value="${rr.mg?String(rr.mg).replace('.',','):''}"></div>`
+      :TRI.map(p=>`<div class="f"><label>${P[p].n} ml/g</label><input name="${p}" inputmode="decimal" value="${String(cur[p]).replace('.',',')}"></div>`).join('')}</div>
+    <div class="f" style="margin-top:8px"><label>Nota</label><input name="note" placeholder="${mode==='reactor'?'es. aumentata la CO₂':'es. aumento KH dopo calo'}"></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button></div>
+    <div class="small mut" style="margin-top:6px">${mode==='reactor'?'Registra ogni modifica di portata e ogni nuova misura del KH dell\'effluente: l\'app calcola l\'apporto nel tempo. Il magnesio integrato usa la concentrazione della soluzione Mg in Impostazioni.':'Registra ogni variazione della pompa dosometrica: l\'app integra le dosi nel tempo per calcolare i consumi. Le dosi manuali una tantum vanno nel Diario.'}</div>
   </form></div>`;
   h+=`<div class="card"><h2>Storico variazioni</h2><div class="list">`;
   const R=[...S.doses].sort((a,b)=>b.ts-a.ts);
   if(!R.length) h+=`<p class="mut">Nessuna dose registrata.</p>`;
-  for(const d of R) h+=`<div class="it"><div class="when">${fdate(d.ts,true)}</div><div class="body">${d.kind==='aio'?`<span class="tag">AIO</span> <b>${fmt(num(d.aio)||0,1)} ml</b>`:TRI.map(p=>`<span style="margin-right:10px"><span class="dot" style="background:${TRI_COL[p]}"></span>${fmt(num(d[p])||0,1)} ml</span>`).join('')}${d.note?`<div class="mut small">${esc(d.note)}</div>`:''}</div><div class="acts">${delBtn('doses',d.id)}</div></div>`;
+  for(const d of R) h+=`<div class="it"><div class="when">${fdate(d.ts,true)}</div><div class="body">${d.kind==='reactor'?`<span class="tag">Reattore</span> <b>${fmt(num(d.flow)||0,1)} ml/min</b> · KH ${d.effKH!=null?fmt(num(d.effKH),1):'–'}${d.effCa!=null?' · Ca '+fmt(num(d.effCa),0):''}${num(d.mg)?' · Mg '+fmt(num(d.mg),1)+' ml':''}`:d.kind==='aio'?`<span class="tag">AIO</span> <b>${fmt(num(d.aio)||0,1)} ml</b>`:TRI.map(p=>`<span style="margin-right:10px"><span class="dot" style="background:${TRI_COL[p]}"></span>${fmt(num(d[p])||0,1)} ml</span>`).join('')}${d.note?`<div class="mut small">${esc(d.note)}</div>`:''}</div><div class="acts">${delBtn('doses',d.id)}</div></div>`;
   h+=`</div></div>`;
   // tabella intervalli
   h+=`<div class="card"><h2>Bilancio tra test</h2>`;
   for(const p of TRI){ const I=intervals(p).slice(-6).reverse(); if(!I.length) continue;
     h+=`<div style="margin:6px 0 4px"><span class="dot" style="background:${TRI_COL[p]}"></span><b>${P[p].n}</b></div><div class="list small">`;
-    for(const x of I) h+=`<div class="it"><div class="when">${fdate(x.t1)}→${fdate(x.t2)}</div><div class="body">${fmt(x.c1,P[p].d)} → ${fmt(x.c2,P[p].d)} · dosati ${fmt(x.ml,0)} ml${x.added!=null?` (+${fmt(x.added,P[p].d+1)})`:''}${x.wc?` · cambi ${x.wc>0?'+':''}${fmt(x.wc,P[p].d+1)}`:''}<br>Consumo: <b>${x.cons!=null?fmt(x.cons,p==='kh'?2:1)+' '+P[p].u+'/g':'–'}</b></div></div>`;
+    for(const x of I) h+=`<div class="it"><div class="when">${fdate(x.t1)}→${fdate(x.t2)}</div><div class="body">${fmt(x.c1,P[p].d)} → ${fmt(x.c2,P[p].d)} · ${isReactor()&&p!=='mg'?`effluente ${fmt(x.ml,0)} L`:`dosati ${fmt(x.ml,0)} ml`}${x.added!=null?` (+${fmt(x.added,P[p].d+1)})`:''}${x.wc?` · cambi ${x.wc>0?'+':''}${fmt(x.wc,P[p].d+1)}`:''}<br>Consumo: <b>${x.cons!=null?fmt(x.cons,p==='kh'?2:1)+' '+P[p].u+'/g':'–'}</b></div></div>`;
     h+=`</div>`;
   }
   if(!TRI.some(p=>intervals(p).length)) h+=`<p class="mut small">Servono almeno due test dello stesso parametro.</p>`;
@@ -1001,7 +1061,7 @@ function vGraf(){
     h+=`<div class="card" id="g_${p}"><h2>${P[p].n} ${P[p].u?'('+P[p].u+')':''} <span class="tag">${n} test</span></h2>${n?`<canvas id="cv_${p}" height="150"></canvas>`:'<p class="mut small">Nessun test registrato per questo parametro.</p>'}</div>`;
   }
   h+=`<div class="card"><h2>Consumo giornaliero triade</h2><canvas id="cCons" height="200"></canvas><div class="small mut">Ca e Mg in ppm/g (asse sinistro), KH in dKH/g (asse destro).</div></div>`;
-  h+=`<div class="card"><h2>Dosi (ml/g)</h2><canvas id="cDose" height="170"></canvas></div>`;
+  h+=`<div class="card"><h2>Dosi e regolazioni</h2><canvas id="cDose" height="170"></canvas></div>`;
   return h;
 }
 
@@ -1095,7 +1155,7 @@ function vSet(){
     <div class="small mut" style="margin-bottom:6px">Dati dall'etichetta del prodotto: di quanto alza <b>1 ml in 100 L</b>.</div>
     <div class="row">${TRI.map(p=>`<div class="f"><label>${P[p].n} (${P[p].u})</label><input name="a_${p}" inputmode="decimal" value="${esc(String(s.aio?.[p]??'').replace('.',','))}"></div>`).join('')}</div>
     <div class="small mut" style="margin-top:4px">Se l'etichetta indica altri volumi (es. 1 ml in 50 L), converti: valore × 50 / 100.</div></div>
-  <div class="card"><h2>Soluzioni Balling 3 parti</h2>
+  <div class="card"><h2>Soluzioni Balling 3 parti</h2><div class="small mut" style="margin-bottom:6px">Con il reattore di calcio, la concentrazione del magnesio serve per l'integrazione separata.</div>
     <div class="row">
       <div class="f"><label>Calcio: mg Ca per ml</label><input name="c_ca" inputmode="decimal" value="${esc(String(s.conc.ca??'').replace('.',','))}"></div>
       <div class="f"><label>KH: meq per ml</label><input name="c_kh" inputmode="decimal" value="${esc(String(s.conc.kh??'').replace('.',','))}"></div>
@@ -1153,11 +1213,11 @@ function drawCharts(){
   if(c2) charts.cons=new Chart(c2,{type:'line',data:{datasets:ds},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,title:{display:true,text:'ppm/g'}},y2:{...AX,ticks:{...AX.ticks,callback:v=>fmt(v,2)},grace:'10%',position:'right',grid:{display:false},title:{display:true,text:'dKH/g'}}}}});
   // dosi
   const R=regimens(); const dd=[];
-  const keys=[]; if(R.some(r=>r.kind!=='aio')) keys.push(...TRI); if(R.some(r=>r.kind==='aio')) keys.push('aio');
+  const keys=[]; if(R.some(r=>r.kind!=='aio'&&r.kind!=='reactor')) keys.push(...TRI); if(R.some(r=>r.kind==='aio')) keys.push('aio'); if(R.some(r=>r.kind==='reactor')) keys.push('flow');
   for(const q of keys){ const d=[]; let prev=null;
-    for(const r of R){ const y= q==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : (r.kind==='aio'?0:num(r[q])||0); if(prev!=null) d.push({x:r.ts,y:prev}); d.push({x:r.ts,y}); prev=y }
+    for(const r of R){ const y= q==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : q==='flow' ? (r.kind==='reactor'?num(r.flow)||0:0) : ((r.kind==='aio'||r.kind==='reactor')?0:num(r[q])||0); if(prev!=null) d.push({x:r.ts,y:prev}); d.push({x:r.ts,y}); prev=y }
     if(prev!=null) d.push({x:to,y:prev});
-    dd.push({label:q==='aio'?'All In One':P[q].n,data:d.filter(z=>!from||z.x>=from-1),borderColor:q==='aio'?'#2ec4d6':TRI_COL[q],pointRadius:0,borderWidth:2}) }
+    dd.push({label:q==='aio'?'All In One':q==='flow'?'Reattore (ml/min)':P[q].n,data:d.filter(z=>!from||z.x>=from-1),borderColor:q==='aio'||q==='flow'?'#2ec4d6':TRI_COL[q],pointRadius:0,borderWidth:2}) }
   const c3=document.getElementById('cDose');
   if(c3) charts.dose=new Chart(c3,{type:'line',data:{datasets:dd},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,beginAtZero:true}}}});
 }
@@ -1238,7 +1298,7 @@ function vMenu(){
   const over=S.tasks.filter(t=>dueDiff(t)<0).length, today=S.tasks.filter(t=>dueDiff(t)===0).length;
   const lt=lastEv('tds'); const curAio=rateAt('kh',Date.now());
   const items=[
-    ['dosi','💧','Dosaggio',isAIO()?`All In One · ${fmt(curAio,1)} ml/g`:'Balling 3 parti · consumi e dosi'],
+    ['dosi','💧','Dosaggio',isAIO()?`All In One · ${fmt(curAio,1)} ml/g`:isReactor()?`Reattore di calcio · ${fmt(curAio,1)} ml/min`:'Balling 3 parti · consumi e dosi'],
     ['manut','🔧','Manutenzione',S.tasks.length?(over?`${over} scadut${over>1?'e':'a'}`:today?`${today} da fare oggi`:'tutto in regola'):'scadenze e calendario'],
     ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
@@ -1290,7 +1350,7 @@ function bind(){
   app.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{confirmKey=b.dataset.ask;render();setTimeout(()=>{if(confirmKey===b.dataset.ask){confirmKey=null;render()}},4000)});
   app.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const [c,id]=b.dataset.del.split(':');confirmKey=null;await delItem(c,id);toast('Eliminato');render()});
   app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{editTest=clone(S.tests.find(t=>t.id===b.dataset.edit));render();window.scrollTo(0,0)});
-  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{ if(S.settings.mode===b.dataset.mode) return; S.settings=Object.assign(clone(S.settings),{mode:b.dataset.mode}); await saveSettings(); toast(b.dataset.mode==='aio'?'Modalità All In One':'Modalità Balling 3 parti') });
+  app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{ if(S.settings.mode===b.dataset.mode) return; S.settings=Object.assign(clone(S.settings),{mode:b.dataset.mode}); await saveSettings(); toast({aio:'Modalità All In One',reactor:'Modalità reattore di calcio',balling:'Modalità Balling 3 parti'}[b.dataset.mode]) });
   app.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{go('diario')});
   const bk=document.getElementById('bkClose'); if(bk) bk.onclick=()=>{ snoozeBackup(); render() };
   const ce=document.getElementById('cancelEdit'); if(ce) ce.onclick=()=>{editTest=null;render()};
@@ -1304,7 +1364,10 @@ function bind(){
 
   const fD=document.getElementById('fDose');
   if(fD) fD.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fD);
-    const item = isAIO()
+    if(isReactor()&&num(o.effKH)==null){ toast('Indica il KH dell\'effluente'); return }
+    const item = isReactor()
+      ? {id:uid(),ts:fromInput(o.ts),kind:'reactor',flow:num(o.flow)||0,effKH:num(o.effKH),effCa:num(o.effCa),mg:num(o.mg)||0,note:(o.note||'').trim()}
+      : isAIO()
       ? {id:uid(),ts:fromInput(o.ts),kind:'aio',aio:num(o.aio)||0,note:(o.note||'').trim()}
       : {id:uid(),ts:fromInput(o.ts),kind:'balling',ca:num(o.ca)||0,kh:num(o.kh)||0,mg:num(o.mg)||0,note:(o.note||'').trim()};
     if(await saveItem('doses',item)){ toast('Dose salvata'); render() } };
