@@ -187,16 +187,18 @@ async function saveItem(coll,item){
   }else{
     const arr=S[coll]; const i=arr.findIndex(x=>x.id===item.id); if(i>=0) arr[i]=item; else arr.push(item); lsSave(); enqueue(coll,item.id,'put'); render();
   }
+  if(coll==='tasks') scheduleNotif();
   return true;
 }
 async function delItem(coll,id){
   if(S.mode==='db'){ try{ await base.collection(coll).doc(id).delete() }catch(e){ handleErr(e) } }
   else{ S[coll]=S[coll].filter(x=>x.id!==id); lsSave(); enqueue(coll,id,'del'); render() }
+  if(coll==='tasks') scheduleNotif();
 }
 async function saveSettings(){
   if(S.mode==='db'){ try{ await DB.doc(`data/users/${UID}/settings`).set(clone(S.settings)) }catch(e){ handleErr(e); return } }
   else{ lsSave(); enqueue('settings','main','put') }
-  render();
+  render(); scheduleNotif();
 }
 function handleErr(e){
   const c=e&&e.code;
@@ -451,6 +453,89 @@ async function photosForBackup(){ const out=[]; for(const m of allPhotoMetas()){
   const d=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.readAsDataURL(r.blob) }); out.push({id:r.id,ts:r.ts,note:r.note||'',thumb:r.thumb,lv:r.lv||null,data:d}) } return out }
 
 
+
+
+/* ---------- Notifiche (app Android) ---------- */
+function LNp(){ const C=CAP(); return C&&((C.Plugins&&C.Plugins.LocalNotifications)||(C.registerPlugin&&C.registerPlugin('LocalNotifications'))) }
+function notifOn(){ return !!S.settings.notifOn }
+function notifTime(){ const m=/^(\d{1,2}):(\d{2})$/.exec(S.settings.notifTime||'09:00'); return m?[+m[1],+m[2]]:[9,0] }
+function atTime(dayTs){ const [hh,mm]=notifTime(); const d=new Date(dayTs); d.setHours(hh,mm,0,0); return d.getTime() }
+function notifPlan(){
+  // elenco delle notifiche da programmare per le prossime settimane
+  const out=[], now=Date.now(), until=addDays(day0(now),45);
+  if(!notifOn()) return out;
+  const before=!!S.settings.notifDayBefore, overdue=S.settings.notifOverdue!==false;
+  for(const t of S.tasks){ if(!t.notify) continue;
+    const extra=t.bacter?' · '+bacterTxt():'';
+    // prossime occorrenze: simulo il "fatto" alla data di scadenza per calcolare le successive
+    let tt=clone(t); let due=nextDue(tt);
+    for(let k=0;k<12&&due<=until;k++){
+      const dd=Math.round((due-day0(now))/DAY);
+      if(dd<0){ // scaduta: richiamo quotidiano per 7 giorni
+        if(overdue) for(let j=0;j<7;j++){ const ts=atTime(addDays(day0(now),j)); if(ts>now) out.push({ts,title:`⚠️ ${t.name}`,body:`In ritardo di ${-dd+j} giorn${-dd+j===1?'o':'i'}${extra}`,task:t.id}) }
+      }else{
+        const ts=atTime(due); if(ts>now) out.push({ts,title:`🐠 ${t.name}`,body:`Da fare oggi${extra}`,task:t.id});
+        if(before){ const tb=atTime(addDays(due,-1)); if(tb>now) out.push({ts:tb,title:`Domani: ${t.name}`,body:`Promemoria per domani${extra}`,task:t.id}) }
+        if(overdue&&k===0){ const nd=nextDue(Object.assign(clone(tt),{lastDone:due+12*3600000})); for(let j=1;j<=6;j++){ const tr=atTime(addDays(due,j)); if(tr>=atTime(nd)) break; if(tr>now) out.push({ts:tr,title:`⚠️ ${t.name}`,body:`Non ancora segnata come fatta (${j} giorn${j===1?'o':'i'} di ritardo)${extra}`,task:t.id,ifNotDone:true}) } }
+      }
+      if(dd<0) break;
+      tt.lastDone=due+12*3600000; due=nextDue(tt);
+    }
+  }
+  return out.sort((a,b)=>a.ts-b.ts).slice(0,60);
+}
+let _nt=null; function scheduleNotif(){ clearTimeout(_nt); _nt=setTimeout(rescheduleNotif,700) }
+async function rescheduleNotif(){
+  const LN=LNp(); if(!LN) return;
+  try{
+    const p=await LN.getPending(); if(p&&p.notifications&&p.notifications.length) await LN.cancel({notifications:p.notifications.map(n=>({id:n.id}))});
+    if(!notifOn()) return;
+    const perm=await LN.checkPermissions(); if(perm.display!=='granted') return;
+    // i richiami "in ritardo" dopo la scadenza servono solo finché la scadenza non viene segnata: al "Fatto" si riprogramma tutto
+    const plan=notifPlan();
+    if(!plan.length) return;
+    await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task}}))});
+  }catch(e){ console.warn('notifiche',e) }
+}
+async function initNotif(){
+  const LN=LNp(); if(!LN) return;
+  try{ await LN.createChannel({id:'scadenze',name:'Scadenze acquario',description:'Cambi d\'acqua, test e manutenzioni',importance:4,visibility:1,vibration:true}) }catch(e){}
+  try{ LN.addListener('localNotificationActionPerformed',()=>{ go('manut') }) }catch(e){}
+  rescheduleNotif();
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleNotif() });
+}
+function vNotif(){
+  const app=!!LNp(), s=S.settings;
+  let h=`<div class="card"><h2>Notifiche</h2>`;
+  if(!app) return h+`<div class="small mut">Le notifiche sono disponibili nell'app Android.</div></div>`;
+  h+=`<label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Attiva notifiche</b><br><span class="small mut">Avvisi sul telefono anche ad app chiusa</span></span><input type="checkbox" id="nOn" ${notifOn()?'checked':''} style="width:22px;height:22px"></label>`;
+  if(notifOn()){
+    h+=`<hr><div class="row"><div class="f"><label>Orario degli avvisi</label><input type="time" id="nTime" value="${esc(s.notifTime||'09:00')}"></div></div>
+      <label class="small" style="display:block;margin-top:10px"><input type="checkbox" id="nBefore" ${s.notifDayBefore?'checked':''} style="width:auto;margin-right:6px">Avvisami anche il giorno prima</label>
+      <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="nOver" ${s.notifOverdue!==false?'checked':''} style="width:auto;margin-right:6px">Ricordamelo ogni giorno finché non la segno come fatta</label>
+      <hr><div class="small mut" style="margin-bottom:6px">Scegli quali scadenze notificare:</div>`;
+    if(!S.tasks.length) h+=`<div class="small mut">Nessuna scadenza: creale in <a href="#" data-go="manut" style="color:var(--acc)">Manutenzione</a>.</div>`;
+    for(const t of [...S.tasks].sort((a,b)=>nextDue(a)-nextDue(b))) h+=`<label class="row" style="justify-content:space-between;flex-wrap:nowrap;padding:8px 0;border-top:1px solid var(--line)"><span><b style="font-size:14px">${esc(t.name)}</b><br><span class="small mut">${cadence(t)} · prossima ${fdate(nextDue(t))}</span></span><input type="checkbox" data-ntask="${t.id}" ${t.notify?'checked':''} style="width:22px;height:22px;flex:none"></label>`;
+    const n=notifPlan().length; h+=`<div class="small mut" style="margin-top:8px">${n?`${n} avvisi programmati nelle prossime settimane.`:'Nessun avviso programmato.'}</div>`;
+    h+=`<button class="btn sm sec" id="nTest" style="margin-top:8px">Invia una notifica di prova</button>`;
+  }
+  return h+`</div>`;
+}
+function bindNotif(){
+  const on=document.getElementById('nOn'); if(!on) return; const LN=LNp();
+  on.onchange=async()=>{
+    if(on.checked){ let p=await LN.checkPermissions(); if(p.display!=='granted') p=await LN.requestPermissions();
+      if(p.display!=='granted'){ on.checked=false; toast('Permesso negato: abilitalo nelle impostazioni Android di Reef Log'); return }
+      const first=!('notifOn' in S.settings);
+      S.settings=Object.assign(clone(S.settings),{notifOn:true}); await saveSettings();
+      if(first&&S.tasks.length&&!S.tasks.some(t=>t.notify)) toast('Ora scegli quali scadenze notificare'); }
+    else { S.settings=Object.assign(clone(S.settings),{notifOn:false}); await saveSettings(); toast('Notifiche disattivate') } };
+  const tm=document.getElementById('nTime'); if(tm) tm.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifTime:tm.value||'09:00'}); await saveSettings(); toast('Orario salvato') };
+  const bf=document.getElementById('nBefore'); if(bf) bf.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifDayBefore:bf.checked}); await saveSettings() };
+  const ov=document.getElementById('nOver'); if(ov) ov.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifOverdue:ov.checked}); await saveSettings() };
+  document.querySelectorAll('[data-ntask]').forEach(c=>c.onchange=async()=>{ const t=S.tasks.find(x=>x.id===c.dataset.ntask); if(!t) return; await saveItem('tasks',Object.assign(clone(t),{notify:c.checked})); toast(c.checked?'Notifica attivata':'Notifica disattivata') });
+  const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 Reef Log',body:'Le notifiche funzionano!',schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
+}
 
 /* ---------- Animali e coralli ---------- */
 const LV_CAT={fish:['🐠','Pesci'],sps:['🪸','Coralli SPS'],lps:['🪸','Coralli LPS'],soft:['🌿','Coralli molli'],inv:['🦐','Invertebrati'],cuc:['🐌','Squadra pulizia'],other:['•','Altro']};
@@ -836,7 +921,7 @@ function vManut(){
   const T=[...S.tasks].sort((a,b)=>nextDue(a)-nextDue(b));
   h+=`<div class="list">`;
   for(const t of T){
-    h+=`<div class="it" style="flex-wrap:wrap"><div class="body"><b>${esc(t.name)}</b><div class="small mut">${cadence(t)}${t.lastDone?` · ultima ${fdate(t.lastDone)}`:''}${t.auto==='test'?' · si spunta salvando un test':''}${t.auto==='tds'?' · si spunta salvando un TDS':''}</div>${t.bacter?`<div class="small">${bacterTxt()}</div>`:''}<div style="margin-top:4px">${dueBadge(t)}</div></div>
+    h+=`<div class="it" style="flex-wrap:wrap"><div class="body"><b>${esc(t.name)}</b>${notifOn()&&t.notify?' <span title="Notifica attiva">🔔</span>':''}<div class="small mut">${cadence(t)}${t.lastDone?` · ultima ${fdate(t.lastDone)}`:''}${t.auto==='test'?' · si spunta salvando un test':''}${t.auto==='tds'?' · si spunta salvando un TDS':''}</div>${t.bacter?`<div class="small">${bacterTxt()}</div>`:''}<div style="margin-top:4px">${dueBadge(t)}</div></div>
       <div class="acts"><button class="btn sm" data-done="${t.id}">Fatto</button><button class="btn sm sec" data-etask="${t.id}">✎</button>${delBtn('tasks',t.id)}</div>`;
     if(doneOpen===t.id && t.wc){
       h+=`<form id="fDone" data-id="${t.id}" style="width:100%;margin-top:8px;background:var(--card2);padding:10px;border-radius:10px">
@@ -900,7 +985,7 @@ function vDiario(){
 
 function vSet(){
   const s=S.settings;
-  let h=`<form id="fSet"><div class="card"><h2>Vasca</h2>
+  let h=vNotif()+`<form id="fSet"><div class="card"><h2>Vasca</h2>
     <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" value="${esc(String(s.volume).replace('.',','))}"></div></div>
     <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
   <div class="card"><h2>Avvio e manutenzione</h2>
@@ -1140,7 +1225,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali();
+  bindSync(); bindAnimali(); bindNotif();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
@@ -1266,7 +1351,7 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
     askExit(A);
   });
 })();
-applyRoute(); initStore(); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
+applyRoute(); initStore(); initNotif(); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
 if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 </script>
