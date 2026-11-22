@@ -39,6 +39,7 @@ nav button.plus svg{stroke:#04222a;stroke-width:2.6;width:24px;height:24px}
 .back{display:flex;align-items:center;gap:8px;margin:6px 0 2px}
 .back button{background:none;border:0;color:var(--acc);font:inherit;font-size:15px;padding:6px 0}
 .back h1{font-size:18px;margin:0 0 0 auto;font-weight:700}
+.guide{font-size:15px;line-height:1.55}.guide p{margin:8px 0}.guide ul,.guide ol{margin:6px 0;padding-left:20px}.guide li{margin:5px 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
 .card h2{font-size:14px;margin:0 0 10px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
@@ -103,6 +104,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2ec4d6" stroke-width="1.8"><path d="M3 18c3-2 6 2 9 0s6 2 9 0"/><path d="M8 15V9a2 2 0 1 1 4 0v6M12 12V6a2 2 0 1 1 4 0v9"/></svg>
   <h1>Reef Log</h1>
   <div class="sub" id="hdrSub"></div>
+  <button id="helpBtn" aria-label="Guida" style="background:var(--card2);border:1px solid var(--line);color:var(--acc);width:34px;height:34px;border-radius:50%;font:700 17px system-ui;flex:none;margin-left:6px">?</button>
 </header>
 <main id="app"></main>
 <nav id="nav">
@@ -455,6 +457,94 @@ async function photosForBackup(){ const out=[]; for(const m of allPhotoMetas()){
 
 
 
+
+/* ---------- Guida ---------- */
+const GUIDE=[
+ {id:'primi',i:'🚀',t:'Primi passi',b:`<p>Reef Log è pronta all'uso: i dati restano su questo dispositivo, senza account.</p>
+  <p>Per avere calcoli corretti apri <b>Menu → Impostazioni</b> e imposta:</p>
+  <ol><li><b>Volume netto</b>: l'acqua reale di vasca e sump, tolte rocce e sabbia. Da questo numero dipendono consumi, dosi e batteri.</li>
+  <li><b>Avvio / maturazione</b>: scegli il protocollo di avvio, oppure "Nessuno" se la vasca è già matura (vedi <a data-g="avvio">Avvio e maturazione</a>).</li>
+  <li><b>Prodotto per la triade</b>: Balling 3 parti o All In One, con i dati dell'etichetta (vedi <a data-g="triade">Triade e dosaggio</a>).</li>
+  <li><b>Range obiettivo</b>: i valori ideali di ogni parametro, che colorano i risultati in verde, giallo o rosso. Con la spunta scegli quali parametri vedere in Home.</li></ol>
+  <p>Poi inserisci il primo test con il pulsante <b>＋</b> in basso.</p>`},
+ {id:'navigazione',i:'🧭',t:'Come muoversi',b:`<ul><li><b>Home</b>: riassunto della vasca, cioè avvio, cose da fare, ultimi valori e triade.</li>
+  <li><b>Parametri</b>: nuovo test, grafici e storico.</li>
+  <li><b>＋</b>: aggiunge velocemente test, dosi, cambi d'acqua, TDS, foto, animali, manutenzioni e note.</li>
+  <li><b>Vasca</b>: animali, coralli e foto.</li>
+  <li><b>Menu</b>: dosaggio, manutenzione, osmosi, diario, impostazioni, backup e questa guida.</li></ul>
+  <p>Il pulsante <b>?</b> in alto apre la spiegazione della sezione in cui ti trovi. Il tasto indietro di Android torna alla sezione precedente; dalla Home chiede se vuoi uscire.</p>`},
+ {id:'home',i:'🏠',t:'La Home',b:`<ul><li><b>Avvio / Maturazione</b>: giorni trascorsi e curva di ammoniaca, nitriti e nitrati (solo se hai impostato un avvio).</li>
+  <li><b>Da fare</b>: scadenze di oggi, di domani o in ritardo, e l'avviso se il TDS dell'osmosi è troppo alto.</li>
+  <li><b>Ultimi valori</b>: l'ultima misura di ogni parametro, con la variazione rispetto alla precedente. Il bordo colorato indica: <span style="color:var(--ok)">verde</span> nel range, <span style="color:var(--warn)">giallo</span> vicino ai limiti, <span style="color:var(--bad)">rosso</span> lontano. Tocca un valore per aprirne il grafico.</li>
+  <li><b>Triade</b>: dose attuale, consumo giornaliero e dose consigliata per calcio, KH e magnesio.</li></ul>`},
+ {id:'test',i:'🧪',t:'Test e parametri',b:`<p>In <b>Parametri → Nuovo test</b> compila solo i valori che hai misurato. Gli altri lasciali vuoti: non contano come zero. Il segnaposto grigio mostra l'ultimo valore. Puoi usare la virgola.</p>
+  <p>Puoi cambiare data e ora se inserisci un test fatto prima. In <b>Storico</b> modifichi (✎) o elimini (🗑, due tocchi) i test.</p>
+  <p>In <b>Grafici</b> c'è un grafico per ogni parametro spuntato in Impostazioni, con la fascia verde del range. I pulsanti in alto cambiano il periodo. In fondo ci sono i consumi della triade e la storia delle dosi.</p>`},
+ {id:'triade',i:'💧',t:'Triade e dosaggio',b:`<p>In <b>Menu → Dosaggio</b> scegli il metodo:</p>
+  <ul><li><b>Balling 3 parti</b>: tre soluzioni separate. In Impostazioni inserisci la concentrazione di ognuna (mg/ml per Ca e Mg, meq/ml per il KH), oppure calcolala dalla ricetta in grammi per litro.</li>
+  <li><b>All In One</b>: una sola soluzione. In Impostazioni inserisci di quanto alza <b>1 ml in 100 L</b>. Se l'etichetta parla di 10 ml, dividi per 10.</li></ul>
+  <p><b>Registra ogni variazione</b> della dose giornaliera con "Imposta nuova dose": l'app calcola quanto hai dosato nel tempo. Le aggiunte una tantum si registrano invece come "Dose manuale" con il ＋.</p>
+  <p><b>Come si calcola il consumo</b>: tra due test consecutivi, consumo = valore iniziale + quanto hai dosato + effetto dei cambi d'acqua − valore finale, diviso per i giorni. In Home vedi la media degli ultimi 30 giorni; "Bilancio tra test" mostra il dettaglio.</p>
+  <p><b>Dose suggerita</b>: la dose giornaliera che compensa il consumo misurato. Con l'All In One è calcolata sul KH, e l'app ti avvisa se calcio o magnesio tenderebbero a salire o a calare.</p>
+  <p><b>Correzioni</b>: se un valore è sotto il range, l'app indica i ml da aggiungere una tantum. Il KH non va alzato di più di circa 1 dKH al giorno.</p>
+  <p><b>Rapporto Ca/KH</b>: in una vasca che consuma per calcificazione è vicino a 7. Valori molto diversi possono indicare un test impreciso o delle precipitazioni.</p>`},
+ {id:'cambi',i:'🔄',t:'Cambi d\'acqua',b:`<p>Registra i cambi dal ＋ → <b>Cambio acqua</b>. Se hai una scadenza "cambio d'acqua", si apre direttamente con litri e batteri già calcolati.</p>
+  <p>In <b>Impostazioni → Acqua del cambio</b> puoi inserire i valori di Ca, KH e Mg dell'acqua nuova. Così l'app sottrae l'effetto dei cambi dai consumi e i calcoli sono più precisi.</p>
+  <p>Se il tuo metodo prevede batteri ai cambi, attiva "Reintegro batteri" in Impostazioni: la dose viene calcolata sul tuo volume.</p>`},
+ {id:'manut',i:'🔧',t:'Manutenzione e scadenze',b:`<p>In <b>Menu → Manutenzione</b> crei le scadenze ricorrenti:</p>
+  <ul><li><b>Ogni N giorni</b>, per esempio test ogni 7 giorni;</li><li><b>Giorni fissi del mese</b>, per esempio il 15 e il 30. Nei mesi più corti vale l'ultimo giorno.</li></ul>
+  <p>Premi <b>Fatto</b> quando hai finito: la prossima data si ricalcola da lì e la cosa resta nel diario. Le scadenze collegate ai test o al TDS si spuntano da sole quando salvi una misura.</p>
+  <p>"Crea le scadenze consigliate" prepara un punto di partenza da modificare. "Aggiungi al calendario" esporta le ricorrenze nel calendario del telefono.</p>`},
+ {id:'notifiche',i:'🔔',t:'Notifiche',b:`<p>In <b>Impostazioni → Notifiche</b>:</p>
+  <ul><li>attiva l'interruttore generale e concedi il permesso;</li><li>scegli l'orario;</li><li>scegli se avere anche un promemoria il giorno prima;</li><li>scegli se ricevere un richiamo ogni giorno quando una scadenza è in ritardo;</li><li>spunta <b>una per una</b> le scadenze che vuoi notificare.</li></ul>
+  <p>Le notifiche arrivano anche ad app chiusa. Usa "Invia una notifica di prova" per controllare.</p>
+  <p><b>Se non arrivano</b>: nelle impostazioni Android di Reef Log controlla che le notifiche siano consentite e imposta la batteria su "Senza restrizioni". Su alcuni telefoni il risparmio energetico blocca gli avvisi programmati.</p>`},
+ {id:'avvio',i:'🌱',t:'Avvio e maturazione',b:`<p>In <b>Impostazioni → Avvio e manutenzione</b> scegli come seguire la partenza della vasca:</p>
+  <ul><li><b>Durata fissa</b> (per esempio Yorah, 4 settimane): giorno e settimana su un totale, con la barra di avanzamento;</li>
+  <li><b>Fino alla fine del ciclo dell'azoto</b>: l'avvio si considera concluso quando ammoniaca (NH₄) e nitriti (NO₂) sono a zero in due test consecutivi;</li>
+  <li><b>Nessuno</b>: per una vasca già matura.</li></ul>
+  <p>Durante l'avvio misura spesso NH₄, NO₂ e NO₃: la Home ne mostra la curva. Foto e animali indicano in che giorno dell'avvio sono stati registrati.</p>`},
+ {id:'osmosi',i:'🚰',t:'Impianto osmosi',b:`<p>In <b>Menu → Osmosi</b> registri il <b>TDS</b> dell'acqua in uscita, misurato in ppm con la penna: 0 è perfetto (verde), 1–2 è accettabile (giallo). Alla soglia impostata, 3 ppm se non la cambi, compare l'avviso di cambiare le resine.</p>
+  <p>Premi "Resine cambiate", "Membrana cambiata" o "Prefiltri cambiati" quando li sostituisci: l'app conta i giorni e fa ripartire il grafico del TDS dall'ultimo cambio delle resine.</p>`},
+ {id:'animali',i:'🐠',t:'Animali e coralli',b:`<p>In <b>Vasca → Animali e coralli</b> crei una scheda per ogni abitante, con foto, nome, specie, categoria, data di inserimento, provenienza, prezzo <b>totale</b> e quantità.</p>
+  <p>Tocca una scheda per modificarla o segnarla come <b>Perso</b> o <b>Ceduto</b>: resta nello storico ma esce dal conteggio di chi è in vasca. In alto trovi il valore in vasca, la spesa totale e la spesa per categoria.</p>`},
+ {id:'foto',i:'📷',t:'Foto dei progressi',b:`<p>Aggiungi le foto dal ＋ o da <b>Vasca → Foto</b>. Vengono ridotte per occupare poco spazio. Tocca una foto per vederla grande, scorri per passare alle altre, aggiungi una nota o correggi la data.</p>
+  <p><b>Prima vs ora</b> confronta la prima foto con l'ultima, <b>Confronta</b> due foto a scelta: trascina il cursore per scoprire la più recente.</p>
+  <p>Per confronti efficaci scatta sempre dallo stesso punto e con la stessa luce.</p>`},
+ {id:'diario',i:'📓',t:'Diario',b:`<p>Il <b>Diario</b> raccoglie tutto ciò che succede in vasca: cambi d'acqua, dosi manuali, manutenzioni, inserimenti, letture TDS e note. Molte voci si creano da sole, per esempio quando premi "Fatto" o aggiungi un animale. Elimini una voce con 🗑 (due tocchi).</p>`},
+ {id:'backup',i:'💾',t:'Backup e cambio telefono',b:`<p>I dati sono salvati <b>solo su questo dispositivo</b>. In <b>Menu → Backup</b>:</p>
+  <ul><li><b>Esporta JSON</b> crea un file con tutti i dati, foto comprese se la casella è spuntata, da salvare su Drive o nei Download;</li>
+  <li><b>Importa JSON</b> ripristina il file. I dati già presenti vengono aggiornati, senza doppioni;</li>
+  <li><b>Copia test in CSV</b> serve per usare i test in un foglio di calcolo.</li></ul>
+  <p><b>Per cambiare telefono</b>: esporta dal vecchio e importa nel nuovo. <b>Non disinstallare l'app</b> senza un backup: la disinstallazione cancella i dati. Gli aggiornamenti dell'app invece li conservano.</p>`},
+ {id:'faq',i:'❓',t:'Domande frequenti',b:`<p><b>Il consumo mostra "–".</b> Servono almeno due test dello stesso parametro e la concentrazione del prodotto inserita in Impostazioni.</p>
+  <p><b>Il consumo sembra sbagliato.</b> Controlla il volume netto, di aver registrato ogni cambio di dose e i cambi d'acqua, e i dati del prodotto. I test fatti a poche ore di distanza amplificano gli errori del kit: meglio almeno un giorno di distanza.</p>
+  <p><b>Ho sbagliato un test.</b> Parametri → Storico → ✎.</p>
+  <p><b>Non vedo un parametro in Home o nei grafici.</b> Spuntalo in Impostazioni → Range obiettivo.</p>
+  <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
+  <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
+];
+const HELP_FOR={home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+let guideQ='';
+function vGuida(){
+  const cur=GUIDE.find(c=>c.id===sub);
+  if(cur){ const i=GUIDE.indexOf(cur), prev=GUIDE[i-1], next=GUIDE[i+1];
+    return `<div class="card guide"><h2 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--tx)">${cur.i} ${cur.t}</h2>${cur.b}</div>
+      <div class="row" style="justify-content:space-between">${prev?`<button class="btn sm sec" data-go="guida-${prev.id}">‹ ${prev.t}</button>`:'<span></span>'}${next?`<button class="btn sm sec" data-go="guida-${next.id}">${next.t} ›</button>`:''}</div>
+      <div style="text-align:center;margin-top:10px"><button class="btn sm sec" data-go="guida">Tutti i capitoli</button></div>`; }
+  const q=guideQ.trim().toLowerCase(), strip=h=>h.replace(/<[^>]+>/g,' ');
+  const L=GUIDE.filter(c=>!q||(c.t+' '+strip(c.b)).toLowerCase().includes(q));
+  return `<div class="card"><input id="gQ" placeholder="Cerca nella guida (es. consumo, TDS, backup)" value="${esc(guideQ)}"></div>`+
+    (L.length?L.map(c=>`<div class="mitem" data-go="guida-${c.id}"><i>${c.i}</i><div class="t"><b>${c.t}</b>${q?`<span>${esc(snip(strip(c.b),q))}</span>`:''}</div><span class="mut">›</span></div>`).join(''):`<div class="card small mut">Nessun risultato per "${esc(guideQ)}".</div>`);
+}
+function snip(t,q){ t=t.replace(/\s+/g,' '); const i=t.toLowerCase().indexOf(q); if(i<0) return ''; return (i>30?'…':'')+t.slice(Math.max(0,i-30),i+60)+'…' }
+function bindGuida(){
+  const app=document.getElementById('app');
+  app.querySelectorAll('.guide a[data-g]').forEach(a=>{ a.href='#'; a.style.color='var(--acc)'; a.onclick=e=>{ e.preventDefault(); go('guida-'+a.dataset.g) } });
+  const q=document.getElementById('gQ'); if(q){ q.oninput=()=>{ guideQ=q.value; const pos=q.selectionStart; render(); const n=document.getElementById('gQ'); if(n){ n.focus(); n.setSelectionRange(pos,pos) } } }
+}
+document.getElementById('helpBtn').onclick=()=>{ const ch= view==='vasca'&&sub==='foto'?'foto' : HELP_FOR[view]; go(ch?'guida-'+ch:'guida') };
+
 /* ---------- Notifiche (app Android) ---------- */
 function LNp(){ const C=CAP(); return C&&((C.Plugins&&C.Plugins.LocalNotifications)||(C.registerPlugin&&C.registerPlugin('LocalNotifications'))) }
 function notifOn(){ return !!S.settings.notifOn }
@@ -772,7 +862,7 @@ function vHome(){
     h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
       <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
-      <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
+      <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" data-go="guida-primi">📖 Guida</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
   }
   const si=startInfo();
   if(si && si.show){
@@ -1107,7 +1197,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -1121,11 +1211,12 @@ const VIEWS={
   diario:()=>backBar()+vDiario(),
   impostazioni:()=>backBar()+vSet(),
   sync:()=>backBar()+vSyncPage(),
+  guida:()=>backBar()+vGuida(),
 };
 function parseHash(){
   let hsh=(location.hash||'').slice(1); if(ALIAS[hsh]) hsh=ALIAS[hsh];
   let [v,sb]=hsh.split('-'); if(!VIEWS[v]) v='home';
-  if(SUBS[v]){ if(!SUBS[v].some(x=>x[0]===sb)) sb=SUBS[v][0][0] } else sb='';
+  if(SUBS[v]){ if(!SUBS[v].some(x=>x[0]===sb)) sb=SUBS[v][0][0] } else if(v==='guida'){ sb=GUIDE.some(c=>c.id===sb)?sb:'' } else sb='';
   return [v,sb];
 }
 function applyRoute(){
@@ -1152,6 +1243,7 @@ function vMenu(){
     ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
+    ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
   return `<div style="margin-top:6px">`+items.map(([k,i,t,d])=>`<div class="mitem" data-go="${k}"><i>${i}</i><div class="t"><b>${t}</b><span>${d}</span></div><span class="mut">›</span></div>`).join('')+`</div>`;
@@ -1225,7 +1317,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
