@@ -1247,6 +1247,16 @@ function lvFormSnapshot(){ const f=document.getElementById('fLv'); return f?form
 function lvFormRestore(o){ const f=document.getElementById('fLv'); if(!f||!o) return; for(const [k,v] of Object.entries(o)){ const el=f.elements[k]; if(el) el.value=v } const sel=document.getElementById('lvSt'); if(sel) document.getElementById('lvEndF').classList.toggle('hide',sel.value==='alive') }
 document.getElementById('photoIn').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addPhotos(fs) };
 window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render() } });
+// Tasto indietro di Android (app nativa): chiude finestre, torna alla sezione precedente, poi esce
+(function(){ const C=CAP(); if(!C) return; const A=(C.Plugins&&C.Plugins.App)||(C.registerPlugin&&C.registerPlugin('App')); if(!A||!A.addListener) return;
+  A.addListener('backButton',()=>{
+    if(!document.getElementById('sheet').classList.contains('hide')){ closeSheet(); return }
+    if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render(); return }
+    if(view==='vasca'&&lvEdit){ lvEdit=null; lvPendingPhoto=null; render(); return }
+    if(view!=='home'){ const h0=location.hash; history.back(); setTimeout(()=>{ if(location.hash===h0) go('home') },200); return }
+    A.exitApp();
+  });
+})();
 applyRoute(); initStore(); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
 if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
