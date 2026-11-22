@@ -1,6 +1,6 @@
 {
   "name": "reef-log",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": true,
   "description": "Reef Log - gestione acquario marino",
   "dependencies": {
@@ -8,7 +8,8 @@
     "@capacitor/core": "8.6.2",
     "@capacitor/filesystem": "8.1.5",
     "@capacitor/share": "8.0.3",
-    "@capacitor/app": "8.1.2"
+    "@capacitor/app": "8.1.2",
+    "@capacitor/local-notifications": "8.3.1"
   },
   "devDependencies": {
     "@capacitor/cli": "8.6.2"

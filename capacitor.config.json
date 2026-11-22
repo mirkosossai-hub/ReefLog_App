@@ -2,5 +2,13 @@
   "appId": "it.reeflog.app",
   "appName": "Reef Log",
   "webDir": "www",
-  "android": { "backgroundColor": "#07131c" }
+  "android": {
+    "backgroundColor": "#07131c"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_reef",
+      "iconColor": "#2ec4d6"
+    }
+  }
 }
