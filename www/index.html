@@ -342,6 +342,7 @@ function dueBadge(t){ const d=dueDiff(t);
   if(d===0) return `<span class="tag" style="background:#33270b;color:#ffd98a;border-color:#6b5212">oggi</span>`;
   if(d===1) return `<span class="tag" style="color:#ffd98a">domani</span>`;
   return `<span class="tag">${fdate(nextDue(t))} · tra ${d} gg</span>` }
+function taskEveryDays(t){ return t.kind==='interval'? Math.max(1,num(t.every)||7) : 30/Math.max(1,(t.days||[]).length) }
 function cadence(t){ return t.kind==='interval'? `ogni ${num(t.every)||7} giorni` : `il ${(t.days||[]).join(' e il ')} di ogni mese` }
 function bacterMl(){ return (num(S.settings.bacterPer250)||5)*vol()/250 }
 function startMode(){ return S.settings.startMode || (S.settings.startDate?'fixed':'none') }
@@ -713,6 +714,8 @@ function widgetPush(){
 
 /* ---------- Scorte e consumabili ---------- */
 const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
+const STOCK_UNITS=['pz','ml','L','g','kg','mg'];
+function stU(it){ return it.type==='other'?(STOCK_UNITS.includes(it.unit)?it.unit:'pz'):(STOCK_T[it.type]||STOCK_T.other)[1] }
 let stockEdit=null;
 function stockUsed(it,t1,t2){
   if(t2<=t1) return 0; let u=0;
@@ -725,6 +728,7 @@ function stockUsed(it,t1,t2){
   }
   if(it.type==='salt'){ const g=num(it.saltGL)||36; for(const ev of S.events) if(ev.type==='wc'&&ev.ts>t1&&ev.ts<=t2) u+=(num(ev.liters)||0)*g/1000; return u }
   if(it.type==='reagent'){ for(const t of S.tests) if(t.ts>t1&&t.ts<=t2&&num(t.v?.[it.param])!=null) u++; return u }
+  if(it.type==='other'&&it.task&&num(it.per)){ const tk=S.tasks.find(x=>x.id===it.task); for(const ev of S.events) if(ev.type==='maint'&&ev.ts>t1&&ev.ts<=t2&&(ev.task===it.task||(!ev.task&&tk&&ev.note===tk.name))) u+=num(it.per); return u }
   return 0;
 }
 function stockInfo(it){
@@ -732,34 +736,43 @@ function stockInfo(it){
   // ritmo di consumo: storico degli ultimi 30 giorni (o dall'inizio dei dati, se più recente)
   const first=Math.min(...[...S.tests,...S.events,...S.doses].map(x=>x.ts).filter(Boolean),now), from=Math.max(now-30*DAY,first), span=(now-from)/DAY; let rate=span>=3?stockUsed(it,from,now)/span:0;
   if(!rate&&['aio','ca','kh','mg'].includes(it.type)){ const r=curReg(now); if(r) rate= it.type==='aio'?(r.kind==='aio'?num(r.aio)||0:0):(r.kind!=='aio'&&r.kind!=='reactor'?num(r[it.type])||0:0) }
+  if(!rate&&it.type==='other'&&it.task&&num(it.per)){ const tk=S.tasks.find(x=>x.id===it.task); if(tk) rate=num(it.per)/taskEveryDays(tk) }
   const days= rate>0? rem/rate : null;
   const exp=num(it.expiry), expDays= exp? Math.floor((exp-now)/DAY) : null;
   return {rem,rate,days,expDays};
 }
 function stockAlerts(){ return S.stock.map(it=>({it,i:stockInfo(it)})).filter(({i})=>(i.days!=null&&i.days<7)||(i.expDays!=null&&i.expDays<15)) }
 function vScorte(){
-  let h=`<div class="card"><div class="small mut">Le quantità scendono da sole in base a quello che registri: dosi per i prodotti della triade, cambi d'acqua per il sale, test eseguiti per i reagenti.</div><button class="btn" id="stAdd" style="margin-top:10px;width:100%">+ Aggiungi prodotto</button></div>`;
+  let h=`<div class="card"><div class="small mut">Le quantità scendono da sole in base a quello che registri: dosi per i prodotti della triade, cambi d'acqua per il sale, test eseguiti per i reagenti, manutenzioni collegate per gli altri prodotti.</div><button class="btn" id="stAdd" style="margin-top:10px;width:100%">+ Aggiungi prodotto</button></div>`;
   if(stockEdit) h+=stockForm();
   if(!S.stock.length) return h+`<div class="card small mut">Nessun prodotto. Aggiungi ad esempio l'All In One, il sale o i reagenti dei test.</div>`;
   for(const it of [...S.stock].sort((a,b)=>(stockInfo(a).days??1e9)-(stockInfo(b).days??1e9))){
-    const i=stockInfo(it), u=(STOCK_T[it.type]||STOCK_T.other)[1], pct=num(it.size)?Math.min(100,100*i.rem/num(it.size)):null;
+    const i=stockInfo(it), u=stU(it), pct=num(it.size)?Math.min(100,100*i.rem/num(it.size)):null;
     const col=i.days==null?'var(--mut)':i.days<7?'var(--bad)':i.days<21?'var(--warn)':'var(--ok)';
     h+=`<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(it.name)}</b> <span class="tag">${(STOCK_T[it.type]||STOCK_T.other)[0]}${it.type==='reagent'&&P[it.param]?' · '+P[it.param].n:''}</span></div><div class="acts"><button class="btn sm sec" data-stedit="${it.id}">✎</button>${delBtn('stock',it.id)}</div></div>
-      <div class="row" style="margin-top:6px;gap:16px"><div><span class="big">${fmt(i.rem,u==='kg'?2:u==='test'?0:0)}</span> <small class="mut">${u} rimasti</small></div>${i.days!=null?`<div style="color:${col}"><b>≈ ${fmt(i.days,0)} giorni</b><div class="small mut">${fmt(i.rate,u==='kg'?3:1)} ${u}/giorno</div></div>`:'<div class="small mut">durata non stimabile</div>'}</div>
+      <div class="row" style="margin-top:6px;gap:16px"><div><span class="big">${fmt(i.rem,u==='kg'||u==='L'?2:0)}</span> <small class="mut">${u} rimasti</small></div>${i.days!=null?`<div style="color:${col}"><b>≈ ${fmt(i.days,0)} giorni</b><div class="small mut">${fmt(i.rate,u==='kg'||u==='L'?3:1)} ${u}/giorno</div></div>`:'<div class="small mut">durata non stimabile</div>'}</div>
       ${pct!=null?`<div style="height:6px;background:#0a1a24;border-radius:4px;margin-top:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div>`:''}
       ${i.expDays!=null?`<div class="small" style="margin-top:6px;color:${i.expDays<0?'var(--bad)':i.expDays<30?'var(--warn)':'var(--mut)'}">${i.expDays<0?'Scaduto':'Scade'} il ${fdate(num(it.expiry),true)}</div>`:''}
-      <button class="btn sm sec" data-strefill="${it.id}" style="margin-top:8px">Nuova confezione</button></div>`;
+      ${it.type==='other'&&it.task&&S.tasks.find(x=>x.id===it.task)?`<div class="small mut" style="margin-top:6px">−${fmt(num(it.per),u==='kg'||u==='L'?2:0)} ${u} a ogni «${esc(S.tasks.find(x=>x.id===it.task).name)}» (${cadence(S.tasks.find(x=>x.id===it.task))})</div>`:''}
+      ${stockUse===it.id?`<form class="row" data-stuseform="${it.id}" style="margin-top:8px"><div class="f"><label>Quantità usata (${u})</label><input name="q" inputmode="decimal" autofocus></div><button class="btn sm" type="submit" style="align-self:flex-end">OK</button><button class="btn sm sec" type="button" data-stusecancel style="align-self:flex-end">Annulla</button></form>`:''}
+      <div class="row" style="margin-top:8px"><button class="btn sm sec" data-strefill="${it.id}">Nuova confezione</button>${it.type==='other'&&stockUse!==it.id?`<button class="btn sm sec" data-stuse="${it.id}">Ho usato…</button>`:''}</div></div>`;
   }
   return h;
 }
+let stockUse=null;
 function stockForm(){
   const x=stockEdit, t=x.type||'aio';
   return `<div class="card"><h2>${x.id?'Modifica prodotto':'Nuovo prodotto'}</h2><form id="fSt">
     <div class="row"><div class="f" style="flex:2"><label>Nome</label><input name="name" value="${esc(x.name||'')}" placeholder="es. Yorah All In One"></div><div class="f"><label>Tipo</label><select name="type" id="stType">${Object.entries(STOCK_T).map(([k,[l]])=>`<option value="${k}" ${t===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
-    <div class="row" style="margin-top:8px"><div class="f"><label>Quantità attuale (<span id="stU">${STOCK_T[t][1]}</span>)</label><input name="qty" inputmode="decimal" value="${x.id?String(Math.round(stockInfo(x).rem*100)/100).replace('.',','):''}"></div><div class="f"><label>Confezione piena (facolt.)</label><input name="size" inputmode="decimal" value="${num(x.size)!=null?String(x.size).replace('.',','):''}"></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Quantità attuale (<span id="stU">${stU({type:t,unit:x.unit})}</span>)</label><input name="qty" inputmode="decimal" value="${x.id?String(Math.round(stockInfo(x).rem*100)/100).replace('.',','):''}"></div><div class="f"><label>Confezione piena (facolt.)</label><input name="size" inputmode="decimal" value="${num(x.size)!=null?String(x.size).replace('.',','):''}"></div></div>
     <div class="row" style="margin-top:8px"><div class="f"><label>Scadenza (facolt.)</label><input type="date" name="expiry" value="${num(x.expiry)?toInput(num(x.expiry)).slice(0,10):''}"></div>
+      <div class="f ${t==='other'?'':'hide'}" id="stUnitBox"><label>Unità di misura</label><select name="unit" id="stUnit">${STOCK_UNITS.map(u=>`<option value="${u}" ${stU({type:'other',unit:x.unit})===u?'selected':''}>${u}</option>`).join('')}</select></div>
       <div class="f ${t==='reagent'?'':'hide'}" id="stParam"><label>Test di</label><select name="param">${Object.keys(P).map(p=>`<option value="${p}" ${x.param===p?'selected':''}>${P[p].n}</option>`).join('')}</select></div>
       <div class="f ${t==='salt'?'':'hide'}" id="stSalt"><label>Grammi per litro</label><input name="saltGL" inputmode="decimal" value="${esc(String(x.saltGL||36).replace('.',','))}"></div></div>
+    <div id="stLink" class="${t==='other'?'':'hide'}" style="margin-top:8px"><div class="row"><div class="f" style="flex:2"><label>Si consuma con</label><select name="task" id="stTask"><option value="">Nessuna manutenzione (aggiorno a mano)</option>${S.tasks.map(k=>`<option value="${k.id}" ${x.task===k.id?'selected':''}>${esc(k.name)} · ${cadence(k)}</option>`).join('')}<option value="new">＋ Nuova manutenzione…</option></select></div>
+      <div class="f ${x.task?'':'hide'}" id="stPerBox"><label>Usati ogni volta</label><input name="per" inputmode="decimal" value="${num(x.per)!=null?String(x.per).replace('.',','):''}"></div></div>
+      <div class="row hide" id="stNewTask" style="margin-top:8px"><div class="f" style="flex:2"><label>Nome manutenzione</label><input name="tname" placeholder="es. Cambio carbone"></div><div class="f"><label>Ogni (giorni)</label><input name="tevery" inputmode="numeric" value="30"></div></div>
+      <div class="small mut" style="margin-top:4px">Quando segni come fatta la manutenzione, la quantità scende da sola.</div></div>
     <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="stCancel">Annulla</button></div></form></div>`;
 }
 /* ---------- Attrezzatura ---------- */
@@ -805,13 +818,22 @@ function bindStockGear(){
   const app=document.getElementById('app'); const d2ts=v=>{ if(!v) return null; const d=new Date(v+'T12:00'); return isFinite(d)?d.getTime():null };
   const sa=document.getElementById('stAdd'); if(sa) sa.onclick=()=>{ stockEdit={}; render() };
   app.querySelectorAll('[data-stedit]').forEach(b=>b.onclick=()=>{ stockEdit=clone(S.stock.find(x=>x.id===b.dataset.stedit)); render(); window.scrollTo(0,0) });
+  app.querySelectorAll('[data-stuse]').forEach(b=>b.onclick=()=>{ stockUse=b.dataset.stuse; render() });
+  app.querySelectorAll('[data-stusecancel]').forEach(b=>b.onclick=()=>{ stockUse=null; render() });
+  app.querySelectorAll('[data-stuseform]').forEach(fm=>fm.onsubmit=async e=>{ e.preventDefault(); const it=S.stock.find(x=>x.id===fm.dataset.stuseform); const q=num(formVals(fm).q); if(!it||!(q>0)){ toast('Indica la quantità'); return }
+    const rem=stockInfo(it).rem; await saveItem('stock',Object.assign(clone(it),{qty:Math.max(0,rem-q),setTs:Date.now()})); stockUse=null; toast(`Scalati ${fmt(q,stU(it)==='kg'||stU(it)==='L'?2:0)} ${stU(it)}`); render() });
   app.querySelectorAll('[data-strefill]').forEach(b=>b.onclick=async()=>{ const it=S.stock.find(x=>x.id===b.dataset.strefill); if(!it) return; if(!num(it.size)){ stockEdit=clone(it); render(); toast('Indica la nuova quantità'); return }
     await saveItem('stock',Object.assign(clone(it),{qty:num(it.size),setTs:Date.now()})); toast('Nuova confezione registrata') });
   const f=document.getElementById('fSt');
-  if(f){ const ty=document.getElementById('stType'); ty.onchange=()=>{ document.getElementById('stU').textContent=STOCK_T[ty.value][1]; document.getElementById('stParam').classList.toggle('hide',ty.value!=='reagent'); document.getElementById('stSalt').classList.toggle('hide',ty.value!=='salt') };
+  if(f){ const ty=document.getElementById('stType'); const un=document.getElementById('stUnit'); un.onchange=()=>{ document.getElementById('stU').textContent=un.value }; ty.onchange=()=>{ document.getElementById('stU').textContent=stU({type:ty.value,unit:un.value}); document.getElementById('stUnitBox').classList.toggle('hide',ty.value!=='other'); document.getElementById('stLink').classList.toggle('hide',ty.value!=='other'); document.getElementById('stParam').classList.toggle('hide',ty.value!=='reagent'); document.getElementById('stSalt').classList.toggle('hide',ty.value!=='salt') };
+    const tsel=document.getElementById('stTask'); tsel.onchange=()=>{ document.getElementById('stPerBox').classList.toggle('hide',!tsel.value); document.getElementById('stNewTask').classList.toggle('hide',tsel.value!=='new') };
     document.getElementById('stCancel').onclick=()=>{ stockEdit=null; render() };
     f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return } const q=num(o.qty); if(q==null){ toast('Indica la quantità attuale'); return }
-      const it=Object.assign(clone(stockEdit),{id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null});
+      let task=o.type==='other'?(o.task||null):null, per=task?num(o.per):null;
+      if(task&&!(per>0)){ toast('Indica quanto ne usi ogni volta'); return }
+      if(task==='new'){ const ev=Math.max(1,Math.round(num(o.tevery)||0)); if(!(o.tname||'').trim()||!ev){ toast('Indica nome e giorni della manutenzione'); return }
+        const nt={id:uid(),name:o.tname.trim(),kind:'interval',every:ev}; if(!await saveItem('tasks',nt)) return; task=nt.id }
+      const it=Object.assign(clone(stockEdit),{task,per,id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null,unit:o.type==='other'?o.unit:null});
       if(await saveItem('stock',it)){ stockEdit=null; toast('Prodotto salvato'); render() } } }
   const ga=document.getElementById('grAdd'); if(ga) ga.onclick=()=>{ gearEdit={}; render() };
   app.querySelectorAll('[data-gredit]').forEach(b=>b.onclick=()=>{ gearEdit=clone(S.gear.find(x=>x.id===b.dataset.gredit)); render(); window.scrollTo(0,0) });
@@ -831,7 +853,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.8.0';
+const APP_VERSION='1.8.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1199,7 +1221,7 @@ const GUIDE=[
   <p><b>Altre funzioni Pro</b>: in Parametri → Nuovo test, <b>✨ Leggi da foto</b> compila il modulo dalla foto del display del checker, della provetta o di un referto (controlla sempre i valori prima di salvare). Nella scheda di un animale, <b>✨ Riconosci dalla foto</b> propone nome, specie e note di compatibilità. Il <b>report settimanale</b> si attiva in Impostazioni: ogni settimana, nel giorno scelto, all'apertura dell'app viene preparato un riepilogo che trovi in Home e in Menu.</p>
   <p>Le risposte possono contenere errori: verifica sempre prima di intervenire. È una funzione del piano Pro; quando la usi, i dati della vasca vengono inviati al fornitore dell'AI solo per elaborare la risposta.</p>`},
  {id:'scorte',i:'📦',t:'Scorte e consumabili',b:`<p>In <b>Menu → Scorte e consumabili</b> registri i prodotti con la quantità attuale. L'app la fa scendere da sola:</p>
-  <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro.</li></ul>
+  <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro;</li><li><b>Altro</b> (carbone, resine, calze filtranti…): scegli l'unità di misura (pz, ml, L, g, kg, mg) e, se vuoi, collega una manutenzione con la quantità usata ogni volta. Ad esempio carbone, 100 ml a ogni «Cambio carbone» ogni 30 giorni: quando segni il cambio come fatto, la scorta scende da sola. Se non lo colleghi, usa <b>Ho usato…</b> per scalare a mano.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
@@ -2099,7 +2121,7 @@ function bind(){
   app.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===b.dataset.done); if(!t) return;
     if(t.wc){ doneOpen=t.id; render(); return }
     const now=Date.now(); await saveItem('tasks',Object.assign(clone(t),{lastDone:now}));
-    await saveItem('events',{id:uid(),ts:now,type:'maint',note:t.name}); toast('Fatto ✓'); render() });
+    await saveItem('events',{id:uid(),ts:now,type:'maint',note:t.name,task:t.id}); toast('Fatto ✓'); render() });
   const dc=document.getElementById('doneCancel'); if(dc) dc.onclick=()=>{ doneOpen=null; render() };
   const fDn=document.getElementById('fDone');
   if(fDn) fDn.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fDn); const t=S.tasks.find(x=>x.id===fDn.dataset.id); const L=num(o.liters); if(!L){ toast('Indica i litri'); return }
