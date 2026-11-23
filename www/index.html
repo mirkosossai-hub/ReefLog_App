@@ -104,7 +104,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <body>
 <header>
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2ec4d6" stroke-width="1.8"><path d="M3 18c3-2 6 2 9 0s6 2 9 0"/><path d="M8 15V9a2 2 0 1 1 4 0v6M12 12V6a2 2 0 1 1 4 0v9"/></svg>
-  <h1>Reef Log</h1>
+  <h1 id="hdrTitle">Reef Log</h1>
   <div class="sub" id="hdrSub"></div>
   <button id="helpBtn" aria-label="Guida" style="background:var(--card2);border:1px solid var(--line);color:var(--acc);width:34px;height:34px;border-radius:50%;font:700 17px system-ui;flex:none;margin-left:6px">?</button>
 </header>
@@ -178,12 +178,19 @@ const byTs = (a,b)=>a.ts-b.ts;
 
 /* ---------- Storage (db del Claude artifact, fallback locale) ---------- */
 let DB=null, UID=null, base=null;
-const LS_KEY='reeflog.v1';
+// Più vasche (Pro, solo app): ogni vasca ha il suo archivio; la principale usa la chiave storica
+const MULTI=LOCAL_ONLY;
+function tanks(){ let t=[]; try{ t=JSON.parse(localStorage.getItem('reeflog.tanks')||'[]')||[] }catch(e){} if(!t.some(x=>x.id==='main')) t.unshift({id:'main',name:'Vasca principale'}); return t }
+function saveTanks(t){ try{ localStorage.setItem('reeflog.tanks',JSON.stringify(t)) }catch(e){} }
+function curTank(){ if(!MULTI) return 'main'; let c=null; try{ c=localStorage.getItem('reeflog.curTank') }catch(e){} return (c&&tanks().some(x=>x.id===c)&&(c==='main'||lsProOk()))?c:'main' }
+function lsProOk(){ try{ return localStorage.getItem('reeflog.pro')==='1' }catch(e){ return false } }
+function tankKey(id){ return id==='main'?'reeflog.v1':'reeflog.v1.'+id }
+function tankName(id){ const t=tanks().find(x=>x.id===(id||curTank())); return t?t.name:'Vasca' }
 function lastBackup(){ try{ return +localStorage.getItem('reeflog.lastBackup')||0 }catch(e){ return 0 } }
 function snoozeBackup(){ try{ localStorage.setItem('reeflog.lastBackup',Date.now()) }catch(e){} }
 function backupDue(){ return (S.tests.length+S.doses.length+S.events.length)>0 && Date.now()-lastBackup()>14*DAY }
-function lsLoad(){ try{ const j=JSON.parse(localStorage.getItem(LS_KEY)||'null'); if(j){ S.tests=j.tests||[]; S.doses=j.doses||[]; S.events=j.events||[]; S.tasks=j.tasks||[]; S.livestock=j.livestock||[]; S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||{}) } }catch(e){} }
-function lsSave(){ try{ localStorage.setItem(LS_KEY,JSON.stringify({tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings})) }catch(e){} }
+function lsLoad(){ S.tests=[]; S.doses=[]; S.events=[]; S.tasks=[]; S.livestock=[]; S.settings=clone(DEF_SETTINGS); try{ const j=JSON.parse(localStorage.getItem(tankKey(curTank()))||'null'); if(j){ S.tests=j.tests||[]; S.doses=j.doses||[]; S.events=j.events||[]; S.tasks=j.tasks||[]; S.livestock=j.livestock||[]; S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||{}) } }catch(e){} }
+function lsSave(){ try{ localStorage.setItem(tankKey(curTank()),JSON.stringify({tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings})) }catch(e){} }
 
 async function saveItem(coll,item){
   if(S.mode==='db'){
@@ -393,10 +400,10 @@ S.photos=[]; let photoSel=null; // null = modalità normale, array = selezione p
 let _pdb=null;
 function pdb(){ if(_pdb) return _pdb; _pdb=new Promise((res,rej)=>{ try{ const r=indexedDB.open('reeflog-photos',1); r.onupgradeneeded=()=>r.result.createObjectStore('photos',{keyPath:'id'}); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error) }catch(e){ rej(e) } }); return _pdb }
 async function ptx(mode,fn){ const db=await pdb(); return new Promise((res,rej)=>{ const tx=db.transaction('photos',mode); const st=tx.objectStore('photos'); const out=fn(st); tx.oncomplete=()=>res(out instanceof IDBRequest?out.result:out); tx.onerror=()=>rej(tx.error) }) }
-async function loadPhotos(){ try{ const all=await ptx('readonly',st=>st.getAll()); const m=(all||[]).map(p=>({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null})).sort((a,b)=>b.ts-a.ts); S.photos=m.filter(p=>!p.lv); S.lvPhotos={}; for(const p of m) if(p.lv) S.lvPhotos[p.id]=p }catch(e){ S.photos=[]; S.lvPhotos={} } }
+async function loadPhotos(){ try{ const all=await ptx('readonly',st=>st.getAll()); const ct=curTank(); const m=(all||[]).filter(p=>(p.tank||'main')===ct).map(p=>({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null})).sort((a,b)=>b.ts-a.ts); S.photos=m.filter(p=>!p.lv); S.lvPhotos={}; for(const p of m) if(p.lv) S.lvPhotos[p.id]=p }catch(e){ S.photos=[]; S.lvPhotos={} } }
 function allPhotoMetas(){ return [...S.photos,...Object.values(S.lvPhotos)] }
 async function getPhoto(id){ return ptx('readonly',st=>st.get(id)) }
-async function putPhoto(rec,quiet){ await ptx('readwrite',st=>st.put(rec)); if(!quiet) enqueue('photos',rec.id,'put') }
+async function putPhoto(rec,quiet){ if(!rec.tank) rec.tank=curTank(); await ptx('readwrite',st=>st.put(rec)); if(!quiet) enqueue('photos',rec.id,'put') }
 async function delPhoto(id,quiet){ await ptx('readwrite',st=>st.delete(id)); if(!quiet) enqueue('photos',id,'del') }
 function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src }) }
 async function resizeTo(img,max,q,type){ const sc=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)); const c=document.createElement('canvas'); c.width=Math.round(img.naturalWidth*sc); c.height=Math.round(img.naturalHeight*sc); c.getContext('2d').drawImage(img,0,0,c.width,c.height); return type==='url'? c.toDataURL('image/jpeg',q) : new Promise(r=>c.toBlob(r,'image/jpeg',q)) }
@@ -479,8 +486,39 @@ async function photosForBackup(){ const out=[]; for(const m of allPhotoMetas()){
 
 
 
+
+/* ---------- Più vasche (Pro) ---------- */
+async function switchTank(id){
+  if(id===curTank()) return;
+  lsSave(); try{ localStorage.setItem('reeflog.curTank',id) }catch(e){}
+  lsLoad(); await loadPhotos(); aiLoad(); lvEdit=null; editTest=null; editTask=null; doneOpen=null; photoSel=null;
+  closeSheet(); render(); scheduleNotif(); toast(tankName(id));
+}
+function openTanks(){
+  const el=document.getElementById('sheet'), T=tanks(), ct=curTank();
+  el.innerHTML=`<div class="pane"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b>Le tue vasche</b><button class="btn sm sec" id="tkX">✕</button></div>
+    <div class="list">${T.map(t=>{ let info=''; try{ const j=JSON.parse(localStorage.getItem(tankKey(t.id))||'null'); if(j) info=`${Object.assign({},DEF_SETTINGS,j.settings||{}).volume} L · ${(j.tests||[]).length} test` }catch(e){}
+      return `<div class="it" style="align-items:center"><div class="body" data-tk="${t.id}" style="cursor:pointer"><b>${t.id===ct?'✓ ':''}${esc(t.name)}</b><div class="small mut">${info||'nuova'}</div></div>
+        <div class="acts"><button class="btn sm sec" data-tkren="${t.id}">✎</button>${t.id!=='main'?`<button class="btn sm sec" data-tkdel="${t.id}">🗑</button>`:''}</div></div>` }).join('')}</div>
+    <div id="tkForm" style="margin-top:10px"><div class="row" style="flex-wrap:nowrap"><input id="tkName" placeholder="Nuova vasca (es. Quarantena)" style="flex:1;min-width:0"><button class="btn" id="tkAdd" style="white-space:nowrap">+ Aggiungi</button></div></div>
+    <div class="small mut" style="margin-top:8px">Ogni vasca ha i suoi test, dosi, scadenze, animali, foto e impostazioni. Le notifiche arrivano per tutte.</div></div>`;
+  el.classList.remove('hide'); el.onclick=e=>{ if(e.target===el) closeSheet() };
+  document.getElementById('tkX').onclick=closeSheet;
+  el.querySelectorAll('[data-tk]').forEach(b=>b.onclick=()=>switchTank(b.dataset.tk));
+  document.getElementById('tkAdd').onclick=()=>{ const n=document.getElementById('tkName').value.trim(); if(!n){ toast('Dai un nome alla vasca'); return }
+    const t=tanks(); const id='t'+uid(); t.push({id,name:n.slice(0,40)}); saveTanks(t); switchTank(id) };
+  el.querySelectorAll('[data-tkren]').forEach(b=>b.onclick=()=>{ const id=b.dataset.tkren, t=tanks(), x=t.find(y=>y.id===id); const row=b.closest('.it');
+    row.innerHTML=`<div class="row" style="flex-wrap:nowrap;width:100%"><input id="tkRen" value="${esc(x.name)}"><button class="btn sm" id="tkRenOk">Salva</button></div>`;
+    const inp=document.getElementById('tkRen'); inp.focus(); document.getElementById('tkRenOk').onclick=()=>{ const v=inp.value.trim(); if(v){ x.name=v.slice(0,40); saveTanks(t); render() } openTanks() } });
+  el.querySelectorAll('[data-tkdel]').forEach(b=>b.onclick=async()=>{ if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Elimina?'; b.classList.add('danger'); return }
+    const id=b.dataset.tkdel; if(curTank()===id) await switchTank('main');
+    try{ localStorage.removeItem(tankKey(id)); localStorage.removeItem('reeflog.aichat.'+id); localStorage.removeItem('reeflog.aidec.'+id) }catch(e){}
+    try{ const all=await ptx('readonly',st=>st.getAll()); for(const p of all||[]) if(p.tank===id) await ptx('readwrite',st=>st.delete(p.id)) }catch(e){}
+    saveTanks(tanks().filter(x=>x.id!==id)); scheduleNotif(); toast('Vasca eliminata'); openTanks() });
+}
+
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.4.0';
+const APP_VERSION='1.5.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -497,11 +535,12 @@ function aiUsage(){ try{ return JSON.parse(lsGet('reeflog.aiusage')||'{"in":0,"o
 function aiCost(u){ const p=AI_PROVIDERS[aiCfg().provider].price; return (u.in*p[0]+u.out*p[1])/1e6 }
 
 const AI={dec:{},msgs:[],busy:false,pendingImg:null,draft:'',confirm:null,error:''};
-try{ AI.msgs=JSON.parse(lsGet('reeflog.aichat')||'[]')||[] }catch(e){ AI.msgs=[] }
-try{ AI.dec=JSON.parse(lsGet('reeflog.aidec')||'{}')||{} }catch(e){ AI.dec={} }
+function aiSuffix(){ const t=curTank(); return t==='main'?'':'.'+t }
+function aiLoad(){ try{ AI.msgs=JSON.parse(lsGet('reeflog.aichat'+aiSuffix())||'[]')||[] }catch(e){ AI.msgs=[] } try{ AI.dec=JSON.parse(lsGet('reeflog.aidec'+aiSuffix())||'{}')||{} }catch(e){ AI.dec={} } AI.confirm=null; AI.error=''; AI.pendingImg=null; AI.draft='' }
+aiLoad();
 function aiSave(){ // salva la conversazione senza le immagini (pesanti)
   const light=AI.msgs.map(m=>({role:m.role,content:Array.isArray(m.content)?m.content.map(b=>b.type==='image'?{type:'text',text:'[foto allegata]'}:b):m.content}));
-  lsSet('reeflog.aichat',JSON.stringify(light.slice(-40))); lsSet('reeflog.aidec',JSON.stringify(AI.dec||{}));
+  lsSet('reeflog.aichat'+aiSuffix(),JSON.stringify(light.slice(-40))); lsSet('reeflog.aidec'+aiSuffix(),JSON.stringify(AI.dec||{}));
 }
 
 function aiSystem(){
@@ -519,6 +558,7 @@ ${aiOverview()}`;
 function r2(v,d=2){ return v==null||!isFinite(v)?null:Math.round(v*10**d)/10**d }
 function aiOverview(){
   const s=S.settings, si=startInfo(), now=Date.now(), reg=curReg(now), o=[];
+  if(MULTI&&tanks().length>1) o.push(`Vasca: ${tankName()}.`);
   o.push(`Volume netto: ${vol()} L.`);
   if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
   else o.push('Vasca già matura (nessun avvio in corso).');
@@ -637,8 +677,9 @@ const TOOL_LABEL={get_tests:'test',get_consumption:'consumi',get_dosing_history:
 function vAI(){
   if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
-    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li></ul>
+    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li>':''}</ul>
     <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
+
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
   if(!aiKey()) h+=`<div class="banner">Inserisci la chiave API in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
   h+=`<div id="aiLog">`;
@@ -683,7 +724,7 @@ function bindAI(){
   if(view==='ai'){ const log=document.getElementById('aiLog'); if(log) setTimeout(()=>window.scrollTo(0,document.body.scrollHeight),30) }
   // impostazioni sviluppatore
   const dv=document.getElementById('verTap'); if(dv) dv.onclick=()=>{ dv._n=(dv._n||0)+1; if(dv._n>=7&&!devMode()){ lsSet('reeflog.dev','1'); toast('Modalità sviluppatore attivata'); render() } else if(dv._n>=3&&dv._n<7&&!devMode()) toast(`Ancora ${7-dv._n} tocchi`) };
-  const pr=document.getElementById('aiPro'); if(pr) pr.onchange=()=>{ lsSet('reeflog.pro',pr.checked?'1':null); toast(pr.checked?'Pro attivo (sviluppatore)':'Pro disattivato'); render() };
+  const pr=document.getElementById('aiPro'); if(pr) pr.onchange=async()=>{ const was=curTank(); lsSet('reeflog.pro',pr.checked?'1':null); if(!pr.checked&&was!=='main'){ try{ localStorage.setItem('reeflog.curTank','main') }catch(e){} lsLoad(); await loadPhotos(); aiLoad() } toast(pr.checked?'Pro attivo (sviluppatore)':'Pro disattivato'); render(); scheduleNotif() };
   const ky=document.getElementById('aiKeySave'); if(ky) ky.onclick=()=>{ const v=document.getElementById('aiKeyIn').value.trim(); lsSet('reeflog.aikey',v||null); const mdl=document.getElementById('aiModelIn').value.trim(); lsSet('reeflog.aicfg',JSON.stringify(Object.assign(aiCfg(),{model:mdl}))); toast(v?'Chiave salvata su questo dispositivo':'Chiave rimossa'); render() };
   const kt=document.getElementById('aiKeyTest'); if(kt) kt.onclick=async()=>{ kt.disabled=true; kt.textContent='Verifica…'; try{ const key=document.getElementById('aiKeyIn').value.trim()||aiKey(); if(key&&key!==aiKey()) lsSet('reeflog.aikey',key); await aiCall([{role:'user',content:[{type:'text',text:'Rispondi solo: OK'}]}]); toast('Connessione riuscita ✓') }catch(e){ toast(e.message) } render() };
   const ur=document.getElementById('aiUsageReset'); if(ur) ur.onclick=()=>{ lsSet('reeflog.aiusage',null); render() };
@@ -699,7 +740,7 @@ function vAISettings(){
     <div class="f" style="margin-top:8px"><label>Chiave API</label><input id="aiKeyIn" type="password" autocomplete="off" placeholder="${k?'••••••••'+esc(k.slice(-4)):'sk-ant-…'}"></div>
     <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
     <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>
-    <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:3})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
+    <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
     ${devMode()?'<hr><button class="btn sm sec" id="devOff">Esci dalla modalità sviluppatore</button>':''}</div>`;
 }
 
@@ -766,6 +807,9 @@ const GUIDE=[
  {id:'ai',i:'✨',t:'Assistente AI (Pro)',b:`<p>L'assistente è una chat che <b>conosce la tua vasca</b>: legge test, consumi, dosi, cambi d'acqua, scadenze e animali, e risponde sui tuoi numeri. Lo apri da <b>Menu → Assistente AI</b>, dal riquadro del dosaggio in Home o da una foto aperta (<b>✨ Analizza</b>).</p>
   <ul><li>Domande libere, per esempio "Perché il KH scende?" o "Posso inserire un nuovo corallo?".</li><li><b>Foto</b>: allega una foto con 📷 per un parere su alghe, cyano, dinoflagellati o coralli. Una foto non basta per una diagnosi certa.</li><li><b>Azioni</b>: l'assistente può proporre di aggiungere una nota, una scadenza, un test letto da una foto o una nuova dose. Non fa nulla senza il tuo <b>Conferma</b>.</li></ul>
   <p>Le risposte possono contenere errori: verifica sempre prima di intervenire. È una funzione del piano Pro; quando la usi, i dati della vasca vengono inviati al fornitore dell'AI solo per elaborare la risposta.</p>`},
+ {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
+  <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
+  <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
  {id:'faq',i:'❓',t:'Domande frequenti',b:`<p><b>Il consumo mostra "–".</b> Servono almeno due test dello stesso parametro e la concentrazione del prodotto inserita in Impostazioni.</p>
   <p><b>Il consumo sembra sbagliato.</b> Controlla il volume netto, di aver registrato ogni cambio di dose e i cambi d'acqua, e i dati del prodotto. I test fatti a poche ore di distanza amplificano gli errori del kit: meglio almeno un giorno di distanza.</p>
   <p><b>Ho sbagliato un test.</b> Parametri → Storico → ✎.</p>
@@ -828,18 +872,24 @@ async function rescheduleNotif(){
   const LN=LNp(); if(!LN) return;
   try{
     const p=await LN.getPending(); if(p&&p.notifications&&p.notifications.length) await LN.cancel({notifications:p.notifications.map(n=>({id:n.id}))});
-    if(!notifOn()) return;
     const perm=await LN.checkPermissions(); if(perm.display!=='granted') return;
     // i richiami "in ritardo" dopo la scadenza servono solo finché la scadenza non viene segnata: al "Fatto" si riprogramma tutto
-    const plan=notifPlan();
+    const plan=[], ct=curTank(), list=MULTI&&isPro()?tanks():[{id:ct,name:tankName(ct)}], keep={settings:S.settings,tasks:S.tasks};
+    for(const tk of list){
+      let data=null; if(tk.id===ct) data={settings:keep.settings,tasks:keep.tasks}; else { try{ const j=JSON.parse(localStorage.getItem(tankKey(tk.id))||'null'); if(j) data={settings:Object.assign(clone(DEF_SETTINGS),j.settings||{}),tasks:j.tasks||[]} }catch(e){} }
+      if(!data) continue;
+      S.settings=data.settings; S.tasks=data.tasks;
+      try{ for(const n of notifPlan()){ if(list.length>1) n.title=`${n.title} · ${tk.name}`; n.tank=tk.id; plan.push(n) } } finally { S.settings=keep.settings; S.tasks=keep.tasks }
+    }
+    plan.sort((a,b)=>a.ts-b.ts); plan.splice(60);
     if(!plan.length) return;
-    await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task}}))});
+    await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
   }catch(e){ console.warn('notifiche',e) }
 }
 async function initNotif(){
   const LN=LNp(); if(!LN) return;
   try{ await LN.createChannel({id:'scadenze',name:'Scadenze acquario',description:'Cambi d\'acqua, test e manutenzioni',importance:4,visibility:1,vibration:true}) }catch(e){}
-  try{ LN.addListener('localNotificationActionPerformed',()=>{ go('manut') }) }catch(e){}
+  try{ LN.addListener('localNotificationActionPerformed',a=>{ const tk=a&&a.notification&&a.notification.extra&&a.notification.extra.tank; if(tk&&tk!==curTank()&&tanks().some(x=>x.id===tk)) switchTank(tk); go('manut') }) }catch(e){}
   rescheduleNotif();
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleNotif() });
 }
@@ -1094,6 +1144,7 @@ function render(){
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
   const hdr=document.getElementById('hdrSub');
   hdr.innerHTML = hdrHtml();
+  const ht=document.getElementById('hdrTitle'); if(MULTI&&isPro()){ ht.innerHTML=`<button id="tankBtn" style="background:none;border:0;color:var(--tx);font:inherit;padding:0;display:flex;align-items:center;gap:6px;max-width:52vw"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(tankName())}</span><span style="color:var(--acc);font-size:14px">▾</span></button>`; document.getElementById('tankBtn').onclick=openTanks } else ht.textContent='Reef Log';
   let h='';
   if(S.mode==='local' && S.ready && !sbUser && backupDue()) h+=`<div class="banner">I dati sono salvati su questo dispositivo. ${lastBackup()?`Ultimo backup ${Math.floor((Date.now()-lastBackup())/DAY)} giorni fa`:'Non hai ancora fatto un backup'}: <a href="#" data-go="sync" style="color:#ffd98a">esporta ora</a>.<button id="bkClose" style="float:right;background:none;border:0;color:#ffd98a;font-size:18px;line-height:1;padding:0 0 0 10px">✕</button></div>`;
   if(S.mode==='db' && S.stale && !S.tests.length && !S.doses.length) h+=`<div class="banner">Caricamento dati…</div>`;
@@ -1687,7 +1738,7 @@ function bind(){
       const withPh=document.getElementById('bkPhotos')?.checked; if(withPh&&S.photos.length) toast('Preparo le foto…');
       const photos=withPh? await photosForBackup() : undefined;
       const data=JSON.stringify({app:'reeflog',v:1,exported:new Date().toISOString(),tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings,photos},null,1);
-      const fn=`reeflog-backup-${new Date().toISOString().slice(0,10)}.json`;
+      const fn=`reeflog-backup-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.json`;
       if(CAP()){ const r=await saveFile(fn,data,'application/json'); if(r==='shared'){ localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup pronto'); render(); return } if(r==='abort') return }
       try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); toast('Backup pronto'); return } }catch(err){}
       try{ const f=new File([data],fn,{type:'application/json'});
