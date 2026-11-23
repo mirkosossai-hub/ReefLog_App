@@ -572,7 +572,17 @@ function stockForm(){
 }
 /* ---------- Attrezzatura ---------- */
 const GEAR_T={pump:'Pompa di movimento',ret:'Pompa di risalita',light:'Plafoniera',skim:'Schiumatoio',heat:'Riscaldatore',ato:'Rabbocco',doser:'Dosometrica',ro:'Osmosi',ctrl:'Controller',other:'Altro'};
-let gearEdit=null;
+let gearEdit=null, gearTaskFor=null;
+function gearDefaultEvery(g){ return g.type==='skim'?14:g.type==='pump'||g.type==='ret'?90:g.type==='ro'?180:30 }
+function gearTaskForm(g){
+  const free=S.tasks.filter(t=>!t.gear);
+  return `<form id="fGrTask" data-g="${g.id}" style="margin-top:8px;background:var(--card2);padding:10px;border-radius:10px">
+    ${free.length?`<label class="small" style="display:block"><input type="radio" name="mode" value="link" checked style="width:auto;margin-right:6px">Collega una scadenza esistente</label>
+      <select name="task" style="margin:6px 0 10px">${free.map(t=>`<option value="${t.id}">${esc(t.name)} · ${cadence(t)}</option>`).join('')}</select>`:''}
+    <label class="small" style="display:block"><input type="radio" name="mode" value="new" ${free.length?'':'checked'} style="width:auto;margin-right:6px">Crea una nuova scadenza</label>
+    <div class="row" style="margin-top:6px"><div class="f" style="flex:2"><label>Nome</label><input name="name" value="${esc('Pulizia '+g.name)}"></div><div class="f"><label>Ogni quanti giorni</label><input name="every" inputmode="numeric" value="${gearDefaultEvery(g)}"></div></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm" type="submit">Salva</button><button class="btn sm sec" type="button" id="grTaskCancel">Annulla</button></div></form>`;
+}
 function vGear(){
   const tot=S.gear.reduce((a,g)=>a+(num(g.price)||0),0);
   let h=`<div class="card"><div class="row" style="justify-content:space-between"><span><b>${S.gear.length}</b> <span class="small mut">apparecchi${tot?` · valore ${eur(tot)}`:''}</span></span></div><button class="btn" id="grAdd" style="margin-top:10px;width:100%">+ Aggiungi apparecchio</button></div>`;
@@ -585,7 +595,8 @@ function vGear(){
       <div class="small" style="margin-top:6px">${g.purchased?`Acquistato il ${fdate(g.purchased,true)} (${age>=365?fmt(age/365,1)+' anni':age+' giorni'})`:''}${num(g.price)!=null?` · ${eur(num(g.price))}`:''}</div>
       ${w?`<div class="small" style="color:${w<Date.now()?'var(--mut)':'var(--ok)'}">${w<Date.now()?'Garanzia scaduta il ':'In garanzia fino al '}${fdate(w,true)}</div>`:''}
       ${g.note?`<div class="small mut" style="margin-top:4px">${esc(g.note)}</div>`:''}
-      ${linked.length?`<div class="small" style="margin-top:6px">🔧 ${linked.map(t=>`${esc(t.name)} · ${cadence(t)}`).join('<br>🔧 ')}</div>`:`<button class="btn sm sec" data-grtask="${g.id}" style="margin-top:8px">+ Scadenza di manutenzione</button>`}</div>`;
+      ${linked.map(t=>`<div class="row small" style="margin-top:6px;flex-wrap:nowrap;justify-content:space-between"><span>🔧 <b>${esc(t.name)}</b> · ${cadence(t)}</span><span class="acts"><button class="btn sm sec" data-grtedit="${t.id}">✎</button><button class="btn sm sec" data-grunlink="${t.id}">Scollega</button></span></div>`).join('')}
+      ${gearTaskFor===g.id?gearTaskForm(g):`<button class="btn sm sec" data-grtask="${g.id}" style="margin-top:8px">+ Manutenzione</button>`}</div>`;
   }
   return h;
 }
@@ -612,8 +623,14 @@ function bindStockGear(){
       if(await saveItem('stock',it)){ stockEdit=null; toast('Prodotto salvato'); render() } } }
   const ga=document.getElementById('grAdd'); if(ga) ga.onclick=()=>{ gearEdit={}; render() };
   app.querySelectorAll('[data-gredit]').forEach(b=>b.onclick=()=>{ gearEdit=clone(S.gear.find(x=>x.id===b.dataset.gredit)); render(); window.scrollTo(0,0) });
-  app.querySelectorAll('[data-grtask]').forEach(b=>b.onclick=async()=>{ const g=S.gear.find(x=>x.id===b.dataset.grtask); if(!g) return; const every= g.type==='skim'?7:g.type==='pump'||g.type==='ret'?90:g.type==='ro'?180:30;
-    await saveItem('tasks',{id:uid(),name:`Pulizia ${g.name}`,kind:'interval',every,gear:g.id}); toast(`Scadenza creata: ogni ${every} giorni (modificabile in Manutenzione)`) });
+  app.querySelectorAll('[data-grtask]').forEach(b=>b.onclick=()=>{ gearTaskFor=b.dataset.grtask; render() });
+  const gtc=document.getElementById('grTaskCancel'); if(gtc) gtc.onclick=()=>{ gearTaskFor=null; render() };
+  const gtf=document.getElementById('fGrTask'); if(gtf) gtf.onsubmit=async e=>{ e.preventDefault(); const o=formVals(gtf), gid=gtf.dataset.g;
+    if(o.mode==='link'){ const t=S.tasks.find(x=>x.id===o.task); if(t) await saveItem('tasks',Object.assign(clone(t),{gear:gid})); toast('Scadenza collegata') }
+    else { const ev=Math.max(1,Math.round(num(o.every)||0)); if(!ev||!(o.name||'').trim()){ toast('Indica nome e giorni'); return } await saveItem('tasks',{id:uid(),name:o.name.trim(),kind:'interval',every:ev,gear:gid}); toast(`Scadenza creata: ogni ${ev} giorni`) }
+    gearTaskFor=null; render() };
+  app.querySelectorAll('[data-grunlink]').forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===b.dataset.grunlink); if(!t) return; const c=clone(t); delete c.gear; await saveItem('tasks',c); toast('Scadenza scollegata (resta in Manutenzione)') });
+  app.querySelectorAll('[data-grtedit]').forEach(b=>b.onclick=()=>{ const t=S.tasks.find(x=>x.id===b.dataset.grtedit); if(!t) return; go('manut'); setTimeout(()=>{ editTask=clone(t); render(); document.getElementById('fTask')?.scrollIntoView({block:'center'}) },80) });
   const g=document.getElementById('fGr');
   if(g){ document.getElementById('grCancel').onclick=()=>{ gearEdit=null; render() };
     g.onsubmit=async e=>{ e.preventDefault(); const o=formVals(g); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return }
@@ -622,7 +639,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.6.0';
+const APP_VERSION='1.6.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -844,7 +861,7 @@ function vAISettings(){
     <div class="f" style="margin-top:8px"><label>Chiave API</label><input id="aiKeyIn" type="password" autocomplete="off" placeholder="${k?'••••••••'+esc(k.slice(-4)):'sk-ant-…'}"></div>
     <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
     <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>
-    <hr><label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Report settimanale automatico</b><br><span class="small mut">Un riepilogo AI della vasca ogni settimana (circa 0,002 $ a report)</span></span><input type="checkbox" id="repOn" ${aiCfg().report?'checked':''} style="width:22px;height:22px;flex:none"></label>
+    <hr><label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Report settimanale automatico</b><br><span class="small mut">Un riepilogo AI della vasca ogni settimana (circa 0,002 $ a report). L'avviso si sceglie in Notifiche.</span></span><input type="checkbox" id="repOn" ${aiCfg().report?'checked':''} style="width:22px;height:22px;flex:none"></label>
     ${aiCfg().report?`<div class="f" style="margin-top:8px"><label>Giorno del report</label><select id="repDay">${['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'].map((d,i)=>`<option value="${i}" ${reportDay()===i?'selected':''}>${d}</option>`).join('')}</select></div>`:''}
     <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
     ${devMode()?'<hr><button class="btn sm sec" id="devOff">Esci dalla modalità sviluppatore</button>':''}</div>`;
@@ -960,7 +977,7 @@ const GUIDE=[
   <p>Premi <b>Fatto</b> quando hai finito: la prossima data si ricalcola da lì e la cosa resta nel diario. Le scadenze collegate ai test o al TDS si spuntano da sole quando salvi una misura.</p>
   <p>"Crea le scadenze consigliate" prepara un punto di partenza da modificare. "Aggiungi al calendario" esporta le ricorrenze nel calendario del telefono.</p>`},
  {id:'notifiche',i:'🔔',t:'Notifiche',b:`<p>In <b>Impostazioni → Notifiche</b>:</p>
-  <ul><li>attiva l'interruttore generale e concedi il permesso;</li><li>scegli l'orario;</li><li>scegli se avere anche un promemoria il giorno prima;</li><li>scegli se ricevere un richiamo ogni giorno quando una scadenza è in ritardo;</li><li>spunta <b>una per una</b> le scadenze che vuoi notificare.</li></ul>
+  <ul><li>attiva l'interruttore generale e concedi il permesso;</li><li>scegli l'orario;</li><li>scegli se avere anche un promemoria il giorno prima;</li><li>scegli se ricevere un richiamo ogni giorno quando una scadenza è in ritardo;</li><li>spunta <b>una per una</b> le scadenze che vuoi notificare;</li><li>negli <b>altri avvisi</b> scegli se ricevere quello del report settimanale e quello delle scorte in esaurimento.</li></ul>
   <p>Le notifiche arrivano anche ad app chiusa. Usa "Invia una notifica di prova" per controllare.</p>
   <p><b>Se non arrivano</b>: nelle impostazioni Android di Reef Log controlla che le notifiche siano consentite e imposta la batteria su "Senza restrizioni". Su alcuni telefoni il risparmio energetico blocca gli avvisi programmati.</p>`},
  {id:'avvio',i:'🌱',t:'Avvio e maturazione',b:`<p>In <b>Impostazioni → Avvio e manutenzione</b> scegli come seguire la partenza della vasca:</p>
@@ -988,7 +1005,7 @@ const GUIDE=[
  {id:'scorte',i:'📦',t:'Scorte e consumabili',b:`<p>In <b>Menu → Scorte e consumabili</b> registri i prodotti con la quantità attuale. L'app la fa scendere da sola:</p>
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
- {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Scadenza di manutenzione</b> crei una pulizia periodica collegata all'apparecchio, che poi gestisci in Manutenzione.</p>`},
+ {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -1047,6 +1064,11 @@ function notifPlan(){
       tt.lastDone=due+12*3600000; due=nextDue(tt);
     }
   }
+  if(S.settings.notifStock){ const now2=Date.now();
+    for(const it of (S.stock||[])){ const i=stockInfo(it);
+      if(i.days!=null){ const when=Math.max(day0(now2),day0(now2+(i.days-7)*DAY)); const ts=atTime(when)>now2?atTime(when):atTime(addDays(day0(now2),1)); if(i.days<60) out.push({ts,title:`📦 ${it.name} sta finendo`,body:`Ne resta per circa ${fmt(Math.max(0,i.days-(ts-now2)/DAY),0)} giorni`,task:'stock'}) }
+      if(i.expDays!=null&&i.expDays>=0){ const ts=atTime(addDays(day0(num(it.expiry)),-7)); if(ts>now2) out.push({ts,title:`📦 ${it.name} scade tra 7 giorni`,body:`Scadenza: ${fdate(num(it.expiry),true)}`,task:'stock'}) }
+    } }
   return out.sort((a,b)=>a.ts-b.ts).slice(0,60);
 }
 let _nt=null; function scheduleNotif(){ clearTimeout(_nt); _nt=setTimeout(rescheduleNotif,700) }
@@ -1056,14 +1078,14 @@ async function rescheduleNotif(){
     const p=await LN.getPending(); if(p&&p.notifications&&p.notifications.length) await LN.cancel({notifications:p.notifications.map(n=>({id:n.id}))});
     const perm=await LN.checkPermissions(); if(perm.display!=='granted') return;
     // i richiami "in ritardo" dopo la scadenza servono solo finché la scadenza non viene segnata: al "Fatto" si riprogramma tutto
-    const plan=[], ct=curTank(), list=MULTI&&isPro()?tanks():[{id:ct,name:tankName(ct)}], keep={settings:S.settings,tasks:S.tasks};
+    const plan=[], ct=curTank(), list=MULTI&&isPro()?tanks():[{id:ct,name:tankName(ct)}], keep={settings:S.settings,tasks:S.tasks,stock:S.stock};
     for(const tk of list){
-      let data=null; if(tk.id===ct) data={settings:keep.settings,tasks:keep.tasks}; else { try{ const j=JSON.parse(localStorage.getItem(tankKey(tk.id))||'null'); if(j) data={settings:Object.assign(clone(DEF_SETTINGS),j.settings||{}),tasks:j.tasks||[]} }catch(e){} }
+      let data=null; if(tk.id===ct) data={settings:keep.settings,tasks:keep.tasks,stock:keep.stock}; else { try{ const j=JSON.parse(localStorage.getItem(tankKey(tk.id))||'null'); if(j) data={settings:Object.assign(clone(DEF_SETTINGS),j.settings||{}),tasks:j.tasks||[],stock:j.stock||[]} }catch(e){} }
       if(!data) continue;
-      S.settings=data.settings; S.tasks=data.tasks;
-      try{ for(const n of notifPlan()){ if(list.length>1) n.title=`${n.title} · ${tk.name}`; n.tank=tk.id; plan.push(n) } } finally { S.settings=keep.settings; S.tasks=keep.tasks }
+      S.settings=data.settings; S.tasks=data.tasks; S.stock=data.stock;
+      try{ for(const n of notifPlan()){ if(list.length>1) n.title=`${n.title} · ${tk.name}`; n.tank=tk.id; plan.push(n) } } finally { S.settings=keep.settings; S.tasks=keep.tasks; S.stock=keep.stock }
     }
-    if(reportOn()&&notifOn()){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri Reef Log: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
+    if(reportOn()&&notifOn()&&S.settings.notifReport){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri Reef Log: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
     plan.sort((a,b)=>a.ts-b.ts); plan.splice(60);
     if(!plan.length) return;
     await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
@@ -1088,6 +1110,9 @@ function vNotif(){
       <hr><div class="small mut" style="margin-bottom:6px">Scegli quali scadenze notificare:</div>`;
     if(!S.tasks.length) h+=`<div class="small mut">Nessuna scadenza: creale in <a href="#" data-go="manut" style="color:var(--acc)">Manutenzione</a>.</div>`;
     for(const t of [...S.tasks].sort((a,b)=>nextDue(a)-nextDue(b))) h+=`<label class="row" style="justify-content:space-between;flex-wrap:nowrap;padding:8px 0;border-top:1px solid var(--line)"><span><b style="font-size:14px">${esc(t.name)}</b><br><span class="small mut">${cadence(t)} · prossima ${fdate(nextDue(t))}</span></span><input type="checkbox" data-ntask="${t.id}" ${t.notify?'checked':''} style="width:22px;height:22px;flex:none"></label>`;
+    h+=`<hr><div class="small mut" style="margin-bottom:6px">Altri avvisi:</div>
+      ${reportOn()?`<label class="row" style="justify-content:space-between;flex-wrap:nowrap;padding:8px 0"><span><b style="font-size:14px">📋 Report settimanale pronto</b><br><span class="small mut">il giorno del report, all'orario degli avvisi</span></span><input type="checkbox" data-nx="notifReport" ${s.notifReport?'checked':''} style="width:22px;height:22px;flex:none"></label>`:''}
+      <label class="row" style="justify-content:space-between;flex-wrap:nowrap;padding:8px 0;border-top:1px solid var(--line)"><span><b style="font-size:14px">📦 Scorte in esaurimento</b><br><span class="small mut">quando un prodotto ha meno di 7 giorni o sta per scadere</span></span><input type="checkbox" data-nx="notifStock" ${s.notifStock?'checked':''} style="width:22px;height:22px;flex:none"></label>`;
     const n=notifPlan().length; h+=`<div class="small mut" style="margin-top:8px">${n?`${n} avvisi programmati nelle prossime settimane.`:'Nessun avviso programmato.'}</div>`;
     h+=`<button class="btn sm sec" id="nTest" style="margin-top:8px">Invia una notifica di prova</button>`;
   }
@@ -1105,6 +1130,7 @@ function bindNotif(){
   const tm=document.getElementById('nTime'); if(tm) tm.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifTime:tm.value||'09:00'}); await saveSettings(); toast('Orario salvato') };
   const bf=document.getElementById('nBefore'); if(bf) bf.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifDayBefore:bf.checked}); await saveSettings() };
   const ov=document.getElementById('nOver'); if(ov) ov.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifOverdue:ov.checked}); await saveSettings() };
+  document.querySelectorAll('[data-nx]').forEach(c=>c.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{[c.dataset.nx]:c.checked}); await saveSettings(); toast(c.checked?'Avviso attivato':'Avviso disattivato') });
   document.querySelectorAll('[data-ntask]').forEach(c=>c.onchange=async()=>{ const t=S.tasks.find(x=>x.id===c.dataset.ntask); if(!t) return; await saveItem('tasks',Object.assign(clone(t),{notify:c.checked})); toast(c.checked?'Notifica attivata':'Notifica disattivata') });
   const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 Reef Log',body:'Le notifiche funzionano!',schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
 }
@@ -1539,7 +1565,7 @@ function vManut(){
   const T=[...S.tasks].sort((a,b)=>nextDue(a)-nextDue(b));
   h+=`<div class="list">`;
   for(const t of T){
-    h+=`<div class="it" style="flex-wrap:wrap"><div class="body"><b>${esc(t.name)}</b>${notifOn()&&t.notify?' <span title="Notifica attiva">🔔</span>':''}<div class="small mut">${cadence(t)}${t.lastDone?` · ultima ${fdate(t.lastDone)}`:''}${t.auto==='test'?' · si spunta salvando un test':''}${t.auto==='tds'?' · si spunta salvando un TDS':''}</div>${t.bacter?`<div class="small">${bacterTxt()}</div>`:''}<div style="margin-top:4px">${dueBadge(t)}</div></div>
+    h+=`<div class="it" style="flex-wrap:wrap"><div class="body"><b>${esc(t.name)}</b>${notifOn()&&t.notify?' <span title="Notifica attiva">🔔</span>':''}<div class="small mut">${t.gear&&S.gear.find(g=>g.id===t.gear)?'🔌 '+esc(S.gear.find(g=>g.id===t.gear).name)+' · ':''}${cadence(t)}${t.lastDone?` · ultima ${fdate(t.lastDone)}`:''}${t.auto==='test'?' · si spunta salvando un test':''}${t.auto==='tds'?' · si spunta salvando un TDS':''}</div>${t.bacter?`<div class="small">${bacterTxt()}</div>`:''}<div style="margin-top:4px">${dueBadge(t)}</div></div>
       <div class="acts"><button class="btn sm" data-done="${t.id}">Fatto</button><button class="btn sm sec" data-etask="${t.id}">✎</button>${delBtn('tasks',t.id)}</div>`;
     if(doneOpen===t.id && t.wc){
       h+=`<form id="fDone" data-id="${t.id}" style="width:100%;margin-top:8px;background:var(--card2);padding:10px;border-radius:10px">
@@ -1754,7 +1780,7 @@ function parseHash(){
 function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
-  if(changed){ doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  if(changed){ doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
   const tab= v==='home'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
