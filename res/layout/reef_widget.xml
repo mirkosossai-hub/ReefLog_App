@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/reef_widget_bg">
+
+    <TextView
+        android:id="@+id/w_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Reef Log"
+        android:textColor="#2ec4d6"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <LinearLayout
+        android:id="@+id/w_vals"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="horizontal">
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/w_v1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#e6f1f5" android:textSize="20sp" android:textStyle="bold" android:text="–" />
+            <TextView android:id="@+id/w_n1" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#8aa4b0" android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/w_v2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#e6f1f5" android:textSize="20sp" android:textStyle="bold" android:text="–" />
+            <TextView android:id="@+id/w_n2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#8aa4b0" android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/w_v3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#e6f1f5" android:textSize="20sp" android:textStyle="bold" android:text="–" />
+            <TextView android:id="@+id/w_n3" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textColor="#8aa4b0" android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/w_msg"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#e6f1f5"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/w_line1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:textColor="#8aa4b0"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/w_line2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="#8aa4b0"
+        android:textSize="11sp"
+        android:maxLines="1"
+        android:ellipsize="end" />
+</LinearLayout>

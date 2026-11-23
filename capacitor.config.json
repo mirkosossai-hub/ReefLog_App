@@ -9,6 +9,15 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_reef",
       "iconColor": "#2ec4d6"
+    },
+    "SocialLogin": {
+      "providers": {
+        "google": true,
+        "facebook": false,
+        "apple": false,
+        "twitter": false
+      },
+      "logLevel": 1
     }
   }
 }

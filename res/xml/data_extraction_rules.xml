@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: backup sul cloud senza foto (limite 25 MB); trasferimento diretto tra telefoni completo -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="app_webview/Default/IndexedDB/" />
+    </cloud-backup>
+</data-extraction-rules>

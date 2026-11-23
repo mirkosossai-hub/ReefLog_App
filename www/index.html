@@ -612,6 +612,105 @@ function bindPDF(){
     _pdfBusy=false; render() };
 }
 
+/* ---------- Backup su Google Drive (app Android, versione base) ---------- */
+// ID client "Applicazione web" del progetto Google Cloud di Reef Log (non è un segreto)
+const GDRIVE_CLIENT='614386911434-t3jbfeuinrf359q9mkdkg22avies7i1g.apps.googleusercontent.com';
+const GD_SCOPE='https://www.googleapis.com/auth/drive.appdata', GD_API='https://www.googleapis.com/drive/v3', GD_UP='https://www.googleapis.com/upload/drive/v3';
+const GD_SKIP=/^reeflog\.(aikey|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget)/;
+let GD_busy=false, GD_msg='', _slInit=false;
+function gdCfg(){ try{ return JSON.parse(lsGet('reeflog.gdrive')||'null')||{} }catch(e){ return {} } }
+function gdSet(o){ lsSet('reeflog.gdrive',JSON.stringify(Object.assign(gdCfg(),o))) }
+function gdClientId(){ return GDRIVE_CLIENT||lsGet('reeflog.gcid')||'' }
+function gdAvail(){ return !!CAP() }
+function SL(){ const C=CAP(); return C&&((C.Plugins&&C.Plugins.SocialLogin)||(C.registerPlugin&&C.registerPlugin('SocialLogin'))) }
+async function slInit(){ if(_slInit) return; const cid=gdClientId(); if(!cid) throw new Error('Configurazione Google mancante'); await SL().initialize({google:{webClientId:cid,mode:'online'}}); _slInit=true }
+async function gdConnect(){
+  await slInit(); const r=await SL().login({provider:'google',options:{scopes:[GD_SCOPE]}}); const res=r&&r.result||{};
+  if(!res.accessToken) throw new Error('Google non ha concesso l\'accesso a Drive');
+  gdSet({on:true,email:res.profile&&res.profile.email||'',auto:gdCfg().auto??true,err:''}); return res.accessToken;
+}
+async function gdToken(){
+  await slInit(); try{ await SL().refresh({provider:'google',options:{}}) }catch(e){}
+  const a=await SL().getAuthorizationCode({provider:'google'}); if(!a||!a.accessToken) throw new Error('Accesso a Google scaduto: ricollega Drive'); return a.accessToken;
+}
+async function gdFetch(tok,url,opt={}){
+  const r=await fetch(url,Object.assign({},opt,{headers:Object.assign({Authorization:'Bearer '+tok},opt.headers||{})}));
+  if(!r.ok){ let m=''; try{ m=(await r.json()).error.message }catch(e){} throw new Error(r.status===401?'Accesso a Google scaduto: ricollega Drive':`Drive: errore ${r.status}${m?' ('+m+')':''}`) }
+  return r;
+}
+async function gdList(tok){ let out=[], pt=''; do{ const r=await (await gdFetch(tok,`${GD_API}/files?spaces=appDataFolder&pageSize=1000&fields=nextPageToken,files(id,name,modifiedTime,size)${pt?'&pageToken='+pt:''}`)).json(); out=out.concat(r.files||[]); pt=r.nextPageToken||'' }while(pt); return out }
+async function gdUpload(tok,name,data,mime,id){
+  if(id) return gdFetch(tok,`${GD_UP}/files/${id}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':mime},body:data});
+  const b='rl'+Math.random().toString(36).slice(2), meta=JSON.stringify({name,parents:['appDataFolder']});
+  const body=new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: ${mime}\r\n\r\n`,data,`\r\n--${b}--`]);
+  return gdFetch(tok,`${GD_UP}/files?uploadType=multipart&fields=id`,{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+b},body});
+}
+async function gdBackup(manual){
+  if(GD_busy) return; GD_busy=true; GD_msg='Backup in corso…'; if(view==='sync') render();
+  try{
+    if(S.mode==='local') lsSave();
+    const tok=await gdToken(), files=await gdList(tok), byName=Object.fromEntries(files.map(f=>[f.name,f]));
+    const keys={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.startsWith('reeflog.')&&!GD_SKIP.test(k)) keys[k]=localStorage.getItem(k) }
+    const all=await ptx('readonly',st=>st.getAll())||[]; const metas=all.map(p=>({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null,tank:p.tank||'main'}));
+    let up=0; for(const p of all){ const n='p_'+p.id+'.jpg'; if(byName[n]||!p.blob) continue; GD_msg=`Carico le foto (${++up})…`; if(view==='sync') render(); await gdUpload(tok,n,p.blob,'image/jpeg') }
+    const keep=new Set(all.map(p=>'p_'+p.id+'.jpg')); for(const f of files) if(/^p_.*\.jpg$/.test(f.name)&&!keep.has(f.name)) await gdFetch(tok,`${GD_API}/files/${f.id}`,{method:'DELETE'}).catch(()=>{});
+    const data=JSON.stringify({app:'reeflog',kind:'drive',v:1,ver:APP_VERSION,ts:Date.now(),keys,photos:metas});
+    await gdUpload(tok,'reeflog-data.json',new Blob([data],{type:'application/json'}),'application/json',byName['reeflog-data.json']&&byName['reeflog-data.json'].id);
+    gdSet({last:Date.now(),size:data.length,nph:all.length,err:'',hash:gdHash()}); snoozeBackup(); GD_msg=''; if(manual) toast('Backup su Drive completato');
+  }catch(e){ console.warn(e); gdSet({err:String(e.message||e)}); GD_msg=''; if(manual) toast(String(e.message||'Backup non riuscito')) }
+  GD_busy=false; if(view==='sync') render();
+}
+async function gdRestoreInfo(){ const tok=await gdToken(); const fs=await gdList(tok); const f=fs.find(x=>x.name==='reeflog-data.json'); return {tok,fs,f} }
+async function gdRestore(){
+  if(GD_busy) return; GD_busy=true; GD_msg='Leggo il backup da Drive…'; render();
+  try{
+    const {tok,fs,f}=await gdRestoreInfo(); if(!f) throw new Error('Su Drive non c\'è ancora nessun backup');
+    const j=await (await gdFetch(tok,`${GD_API}/files/${f.id}?alt=media`)).json(); if(!j||j.app!=='reeflog'||!j.keys) throw new Error('Backup su Drive non valido');
+    const byName=Object.fromEntries(fs.map(x=>[x.name,x])); let n=0;
+    for(const m of (j.photos||[])){ const x=byName['p_'+m.id+'.jpg']; if(!x) continue; GD_msg=`Scarico le foto (${++n}/${j.photos.length})…`; render();
+      try{ const blob=await (await gdFetch(tok,`${GD_API}/files/${x.id}?alt=media`)).blob(); await putPhoto({id:m.id,ts:m.ts,note:m.note,thumb:m.thumb,lv:m.lv,tank:m.tank,blob},true) }catch(e){ console.warn(e) } }
+    for(let i=localStorage.length-1;i>=0;i--){ const k=localStorage.key(i); if(k&&/^reeflog\.v1(\.|$)/.test(k)&&!(k in j.keys)) localStorage.removeItem(k) }
+    for(const [k,v] of Object.entries(j.keys)) if(!GD_SKIP.test(k)) localStorage.setItem(k,v);
+    gdSet({last:j.ts,err:'',hash:''}); snoozeBackup(); toast('Dati ripristinati'); setTimeout(()=>location.reload(),900);
+  }catch(e){ console.warn(e); toast(String(e.message||'Ripristino non riuscito')); GD_msg=''; GD_busy=false; render() }
+}
+function gdHash(){ let s=''; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&/^reeflog\.(v1|tanks)/.test(k)) s+=k+(localStorage.getItem(k)||'').length+'|'+(localStorage.getItem(k)||'').slice(-64) } return s+'#'+((S.photos||[]).length+Object.keys(S.lvPhotos||{}).length) }
+function gdAuto(){ const c=gdCfg(); if(!gdAvail()||!c.on||c.auto===false||GD_busy) return; if(Date.now()-(c.last||0)<20*3600e3) return; if(c.hash&&c.hash===gdHash()) return; gdBackup(false) }
+function vDrive(){
+  if(!gdAvail()) return '';
+  const c=gdCfg(); let h=`<div class="card"><h2>Backup su Google Drive</h2>`;
+  if(!gdClientId()) return h+`<div class="small mut">Backup su Drive in arrivo con il prossimo aggiornamento.</div>${devMode()?`<div class="f" style="margin-top:8px"><label>ID client web Google (sviluppatore)</label><input id="gcid" placeholder="….apps.googleusercontent.com"></div><button class="btn sm sec" id="gcidSave" style="margin-top:6px">Salva ID</button>`:''}</div>`;
+  if(!c.on) return h+`<div class="small">Salva automaticamente dati e foto nel tuo Google Drive, in una cartella nascosta che vede solo Reef Log. Se cambi telefono, colleghi lo stesso account e ripristini tutto.</div>
+    <button class="btn" id="gdOn" style="width:100%;margin-top:10px" ${GD_busy?'disabled':''}>Collega Google Drive</button>
+    <button class="btn sm sec" id="gdRest" style="width:100%;margin-top:8px" ${GD_busy?'disabled':''}>Ho già un backup: ripristina</button>${GD_msg?`<div class="small mut" style="margin-top:6px">${esc(GD_msg)}</div>`:''}</div>`;
+  h+=`<div class="small">Collegato come <b>${esc(c.email||'account Google')}</b></div>
+    <div class="small mut" style="margin-top:4px">${GD_msg?esc(GD_msg):c.last?`Ultimo backup ${fdate(c.last,true)} · ${c.nph||0} foto`:'Nessun backup ancora'}</div>
+    ${c.err&&!GD_msg?`<div class="small" style="color:#ffb4b4;margin-top:4px">${esc(c.err)}</div>`:''}
+    <label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="gdAuto" ${c.auto!==false?'checked':''} style="width:auto;margin-right:6px">Backup automatico (una volta al giorno, se ci sono novità)</label>
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="gdNow" ${GD_busy?'disabled':''}>Backup ora</button><button class="btn sm sec" id="gdRest" ${GD_busy?'disabled':''}>Ripristina</button><button class="btn sm sec" id="gdOff" ${GD_busy?'disabled':''}>Scollega</button></div></div>`;
+  return h;
+}
+function bindDrive(){
+  const $=id=>document.getElementById(id);
+  if($('gcidSave')) $('gcidSave').onclick=()=>{ const v=$('gcid').value.trim(); if(!/apps\.googleusercontent\.com$/.test(v)){ toast('ID non valido'); return } lsSet('reeflog.gcid',v); _slInit=false; render() };
+  if($('gdOn')) $('gdOn').onclick=async()=>{ GD_busy=true; GD_msg='Accesso a Google…'; render(); try{ await gdConnect(); GD_busy=false; GD_msg=''; render(); gdBackup(true) }catch(e){ console.warn(e); GD_busy=false; GD_msg=''; toast(/cancel/i.test(String(e&&e.message))?'Accesso annullato':String(e.message||'Accesso non riuscito')); render() } };
+  if($('gdNow')) $('gdNow').onclick=()=>gdBackup(true);
+  if($('gdAuto')) $('gdAuto').onchange=e=>{ gdSet({auto:e.target.checked}); toast(e.target.checked?'Backup automatico attivo':'Backup automatico disattivato') };
+  if($('gdRest')) $('gdRest').onclick=async()=>{ const b=$('gdRest'); if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Sostituisco i dati di questo telefono?'; return }
+    if(!gdCfg().on){ try{ GD_busy=true; GD_msg='Accesso a Google…'; render(); await gdConnect(); GD_busy=false }catch(e){ GD_busy=false; GD_msg=''; toast(String(e.message||'Accesso non riuscito')); render(); return } } gdRestore() };
+  if($('gdOff')) $('gdOff').onclick=async()=>{ const b=$('gdOff'); if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Confermi?'; return } try{ await slInit(); await SL().logout({provider:'google'}) }catch(e){} lsSet('reeflog.gdrive',null); toast('Drive scollegato: i backup restano sul tuo Drive'); render() };
+}
+/* ---------- Widget Android (Pro) ---------- */
+let _wLast='';
+function widgetPush(){
+  const C=CAP(); if(!C) return; const W=(C.Plugins&&C.Plugins.ReefWidget)||(C.registerPlugin&&C.registerPlugin('ReefWidget')); if(!W||!W.update) return;
+  const now=Date.now(); const lt=S.tests.length?Math.max(...S.tests.map(t=>t.ts)):0;
+  const tk=[...S.tasks].filter(t=>t.on!==false).map(t=>({n:t.name,ts:nextDue(t)})).sort((a,b)=>a.ts-b.ts)[0]||null;
+  const params=['kh','ca','mg'].map(p=>{ const l=lastVal(p); return {n:P[p].n==='Magnesio'?'Mg':P[p].n==='Calcio'?'Ca':'KH',v:l?fmt(l.v,P[p].d):'–',u:P[p].u,s:l?status(p,l.v).replace('s-',''):''} });
+  const d=JSON.stringify({pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'Reef Log',params,lastTest:lt,next:tk});
+  if(d===_wLast) return; _wLast=d; W.update({data:d}).catch(()=>{});
+}
+
 /* ---------- Scorte e consumabili ---------- */
 const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
 let stockEdit=null;
@@ -732,7 +831,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.7.0';
+const APP_VERSION='1.8.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -891,7 +990,7 @@ const TOOL_LABEL={get_tests:'test',get_consumption:'consumi',get_dosing_history:
 function vAI(){
   if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
-    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li>':''}</ul>
+    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li><li>Widget sulla schermata Home con KH, calcio, magnesio e prossima manutenzione</li>':''}</ul>
     <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
 
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
@@ -1087,7 +1186,10 @@ const GUIDE=[
   <p><b>Prima vs ora</b> confronta la prima foto con l'ultima, <b>Confronta</b> due foto a scelta: trascina il cursore per scoprire la più recente.</p>
   <p>Per confronti efficaci scatta sempre dallo stesso punto e con la stessa luce.</p>`},
  {id:'diario',i:'📓',t:'Diario',b:`<p>Il <b>Diario</b> raccoglie tutto ciò che succede in vasca: cambi d'acqua, dosi manuali, manutenzioni, inserimenti, letture TDS e note. Molte voci si creano da sole, per esempio quando premi "Fatto" o aggiungi un animale. Elimini una voce con 🗑 (due tocchi).</p>`},
- {id:'backup',i:'💾',t:'Backup e cambio telefono',b:`<p>I dati sono salvati <b>solo su questo dispositivo</b>. In <b>Menu → Backup</b>:</p>
+ {id:'backup',i:'💾',t:'Backup e cambio telefono',b:`<p>I dati sono salvati <b>sul telefono</b>. Il modo più comodo per proteggerli è il <b>backup su Google Drive</b>, in <b>Menu → Backup</b>: premi <b>Collega Google Drive</b>, scegli il tuo account e da lì in poi l'app salva dati e foto una volta al giorno, se ci sono novità. Il backup finisce in una cartella nascosta del tuo Drive che vede solo Reef Log, quindi non ingombra i tuoi file.</p>
+  <p>Su un telefono nuovo installi Reef Log, vai in <b>Menu → Backup</b> e premi <b>Ho già un backup: ripristina</b> con lo stesso account. I dati del nuovo telefono vengono sostituiti da quelli del backup.</p>
+  <p>In più Android fa da solo un backup dei dati (senza foto) sul tuo account Google, che torna quando reinstalli l'app.</p>
+  <p>Puoi anche usare i file:</p>
   <ul><li><b>Esporta JSON</b> crea un file con tutti i dati, foto comprese se la casella è spuntata, da salvare su Drive o nei Download;</li>
   <li><b>Importa JSON</b> ripristina il file. I dati già presenti vengono aggiornati, senza doppioni;</li>
   <li><b>Copia test in CSV</b> serve per usare i test in un foglio di calcolo.</li></ul>
@@ -1102,6 +1204,8 @@ const GUIDE=[
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
+ {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere Reef Log sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>Reef Log</b> e trascinalo dove vuoi.</p>
+  <p>Il widget mostra gli ultimi KH, calcio e magnesio (verdi se nel range, gialli o rossi se no), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri Reef Log.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -1405,7 +1509,7 @@ window.addEventListener('online',()=>scheduleSync(300));
 window.addEventListener('offline',updHdr);
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleSync(300) });
 setInterval(()=>{ if(document.visibilityState==='visible') sync() },60000);
-function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`<div class="small mut" id="verTap" style="text-align:center;margin:4px 0 8px;user-select:none">Reef Log versione ${APP_VERSION}${devMode()?' · sviluppatore':''}</div>  <div class="card"><h2>Backup</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
+function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`<div class="small mut" id="verTap" style="text-align:center;margin:4px 0 8px;user-select:none">Reef Log versione ${APP_VERSION}${devMode()?' · sviluppatore':''}</div>${LOCAL_ONLY?vDrive():''}  <div class="card"><h2>${LOCAL_ONLY&&CAP()?'Backup su file':'Backup'}</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
   ${allPhotoMetas().length?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="bkPhotos" checked style="width:auto;margin-right:6px">Includi le ${allPhotoMetas().length} foto nel backup (file più grande)</label>`:''}
   <textarea id="expBox" class="hide" style="margin-top:8px;min-height:120px" readonly></textarea>
   <div class="small mut" style="margin-top:6px">${S.tests.length} test · ${S.doses.length} variazioni dose · ${S.events.length} voci diario · archivio ${S.mode==='db'?'sul tuo account (privato)':'locale'}.</div></div>`;
@@ -1460,6 +1564,7 @@ function render(){
   if(view==='param'&&sub==='grafici') drawCharts();
   if(view==='home'){ drawSpark(); drawStart() }
   if(view==='osmosi') drawTds();
+  clearTimeout(render._w); render._w=setTimeout(widgetPush,1500);
 }
 
 function vHome(){
@@ -1985,7 +2090,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
@@ -2115,7 +2220,7 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
     askExit(A);
   });
 })();
-applyRoute(); initStore(); initNotif(); setTimeout(checkReport,1500); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(checkReport,800) }); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
+applyRoute(); initStore(); initNotif(); setTimeout(gdAuto,4000); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(gdAuto,2500); else if(gdAvail()) widgetPush() }); setTimeout(checkReport,1500); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(checkReport,800) }); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
 if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 </script>
