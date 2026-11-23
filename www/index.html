@@ -122,6 +122,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <input type="file" id="photoIn" accept="image/*" multiple class="hide">
 <input type="file" id="lvPhotoIn" accept="image/*" class="hide">
 <input type="file" id="aiPhotoIn" accept="image/*" class="hide">
+<input type="file" id="testPhotoIn" accept="image/*" class="hide">
 <div id="ov" class="ov hide"></div>
 
 <script>
@@ -157,8 +158,9 @@ const DEF_SETTINGS = {
 };
 
 /* ---------- Stato ---------- */
-const S = {tests:[], doses:[], events:[], tasks:[], livestock:[], lvPhotos:{}, settings:clone(DEF_SETTINGS), mode:'local', ready:false, stale:false};
-let editTask = null, doneOpen = null;
+const COLLS=['tests','doses','events','tasks','livestock','stock','gear'];
+const S = {tests:[], doses:[], events:[], tasks:[], livestock:[], stock:[], gear:[], lvPhotos:{}, settings:clone(DEF_SETTINGS), mode:'local', ready:false, stale:false};
+let editTask = null, doneOpen = null, testPrefill = null;
 let view = 'home', editTest = null, grafParam = 'kh', grafRange = 90, confirmKey = null;
 const charts = {};
 
@@ -189,8 +191,8 @@ function tankName(id){ const t=tanks().find(x=>x.id===(id||curTank())); return t
 function lastBackup(){ try{ return +localStorage.getItem('reeflog.lastBackup')||0 }catch(e){ return 0 } }
 function snoozeBackup(){ try{ localStorage.setItem('reeflog.lastBackup',Date.now()) }catch(e){} }
 function backupDue(){ return (S.tests.length+S.doses.length+S.events.length)>0 && Date.now()-lastBackup()>14*DAY }
-function lsLoad(){ S.tests=[]; S.doses=[]; S.events=[]; S.tasks=[]; S.livestock=[]; S.settings=clone(DEF_SETTINGS); try{ const j=JSON.parse(localStorage.getItem(tankKey(curTank()))||'null'); if(j){ S.tests=j.tests||[]; S.doses=j.doses||[]; S.events=j.events||[]; S.tasks=j.tasks||[]; S.livestock=j.livestock||[]; S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||{}) } }catch(e){} }
-function lsSave(){ try{ localStorage.setItem(tankKey(curTank()),JSON.stringify({tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings})) }catch(e){} }
+function lsLoad(){ for(const c of COLLS) S[c]=[]; S.settings=clone(DEF_SETTINGS); try{ const j=JSON.parse(localStorage.getItem(tankKey(curTank()))||'null'); if(j){ for(const c of COLLS) S[c]=j[c]||[]; S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||{}) } }catch(e){} }
+function lsSave(){ try{ localStorage.setItem(tankKey(curTank()),JSON.stringify(Object.assign(Object.fromEntries(COLLS.map(c=>[c,S[c]])),{settings:S.settings}))) }catch(e){} }
 
 async function saveItem(coll,item){
   if(S.mode==='db'){
@@ -227,11 +229,11 @@ async function initStore(){
     const id = user ? await user.id() : null;
     if(!db||!id){ render(); return }
     DB=db; UID=id; base=db.doc(`data/users/${id}/main`); S.mode='db';
-    S.tests=[];S.doses=[];S.events=[];S.tasks=[];S.livestock=[];S.settings=clone(DEF_SETTINGS); S.stale=true;
-    const pending=new Set(['tests','doses','events','tasks','livestock','settings']);
+    for(const c of COLLS) S[c]=[]; S.settings=clone(DEF_SETTINGS); S.stale=true;
+    const pending=new Set([...COLLS,'settings']);
     const timer=setTimeout(()=>{ if(pending.size){ S.stale=true; toast('Dati non ancora raggiungibili…'); render() } },10000);
     const done=(k,snap)=>{ if(!snap.metadata.fromCache){ pending.delete(k); if(!pending.size){ clearTimeout(timer); S.stale=false } } };
-    for(const c of ['tests','doses','events','tasks','livestock']){
+    for(const c of COLLS){
       base.collection(c).onSnapshot(snap=>{ S[c]=snap.docs.map(d=>clone(d.data())); done(c,snap); scheduleRender() },
         e=>{ pending.delete(c); handleErr(e) });
     }
@@ -517,8 +519,110 @@ function openTanks(){
     saveTanks(tanks().filter(x=>x.id!==id)); scheduleNotif(); toast('Vasca eliminata'); openTanks() });
 }
 
+/* ---------- Scorte e consumabili ---------- */
+const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
+let stockEdit=null;
+function stockUsed(it,t1,t2){
+  if(t2<=t1) return 0; let u=0;
+  if(it.type==='aio'||['ca','kh','mg'].includes(it.type)){
+    const R=regimens();
+    for(let i=0;i<R.length;i++){ const s=R[i].ts, e=i+1<R.length?R[i+1].ts:Infinity, ov=Math.min(e,t2)-Math.max(s,t1); if(ov<=0) continue;
+      const r=R[i]; const ml= it.type==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : (r.kind==='balling'||!r.kind ? num(r[it.type])||0 : (r.kind==='reactor'&&it.type==='mg'?num(r.mg)||0:0)); u+=ml*ov/DAY }
+    for(const ev of S.events) if(ev.type==='dose'&&ev.ts>t1&&ev.ts<=t2) u+= it.type==='aio' ? (ev.kind==='aio'?num(ev.aio)||0:0) : (ev.kind!=='aio'?num(ev[it.type])||0:0);
+    return u;
+  }
+  if(it.type==='salt'){ const g=num(it.saltGL)||36; for(const ev of S.events) if(ev.type==='wc'&&ev.ts>t1&&ev.ts<=t2) u+=(num(ev.liters)||0)*g/1000; return u }
+  if(it.type==='reagent'){ for(const t of S.tests) if(t.ts>t1&&t.ts<=t2&&num(t.v?.[it.param])!=null) u++; return u }
+  return 0;
+}
+function stockInfo(it){
+  const now=Date.now(), used=stockUsed(it,it.setTs||now,now), rem=Math.max(0,(num(it.qty)||0)-used);
+  // ritmo di consumo: storico degli ultimi 30 giorni (o dall'inizio dei dati, se più recente)
+  const first=Math.min(...[...S.tests,...S.events,...S.doses].map(x=>x.ts).filter(Boolean),now), from=Math.max(now-30*DAY,first), span=(now-from)/DAY; let rate=span>=3?stockUsed(it,from,now)/span:0;
+  if(!rate&&['aio','ca','kh','mg'].includes(it.type)){ const r=curReg(now); if(r) rate= it.type==='aio'?(r.kind==='aio'?num(r.aio)||0:0):(r.kind!=='aio'&&r.kind!=='reactor'?num(r[it.type])||0:0) }
+  const days= rate>0? rem/rate : null;
+  const exp=num(it.expiry), expDays= exp? Math.floor((exp-now)/DAY) : null;
+  return {rem,rate,days,expDays};
+}
+function stockAlerts(){ return S.stock.map(it=>({it,i:stockInfo(it)})).filter(({i})=>(i.days!=null&&i.days<7)||(i.expDays!=null&&i.expDays<15)) }
+function vScorte(){
+  let h=`<div class="card"><div class="small mut">Le quantità scendono da sole in base a quello che registri: dosi per i prodotti della triade, cambi d'acqua per il sale, test eseguiti per i reagenti.</div><button class="btn" id="stAdd" style="margin-top:10px;width:100%">+ Aggiungi prodotto</button></div>`;
+  if(stockEdit) h+=stockForm();
+  if(!S.stock.length) return h+`<div class="card small mut">Nessun prodotto. Aggiungi ad esempio l'All In One, il sale o i reagenti dei test.</div>`;
+  for(const it of [...S.stock].sort((a,b)=>(stockInfo(a).days??1e9)-(stockInfo(b).days??1e9))){
+    const i=stockInfo(it), u=(STOCK_T[it.type]||STOCK_T.other)[1], pct=num(it.size)?Math.min(100,100*i.rem/num(it.size)):null;
+    const col=i.days==null?'var(--mut)':i.days<7?'var(--bad)':i.days<21?'var(--warn)':'var(--ok)';
+    h+=`<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(it.name)}</b> <span class="tag">${(STOCK_T[it.type]||STOCK_T.other)[0]}${it.type==='reagent'&&P[it.param]?' · '+P[it.param].n:''}</span></div><div class="acts"><button class="btn sm sec" data-stedit="${it.id}">✎</button>${delBtn('stock',it.id)}</div></div>
+      <div class="row" style="margin-top:6px;gap:16px"><div><span class="big">${fmt(i.rem,u==='kg'?2:u==='test'?0:0)}</span> <small class="mut">${u} rimasti</small></div>${i.days!=null?`<div style="color:${col}"><b>≈ ${fmt(i.days,0)} giorni</b><div class="small mut">${fmt(i.rate,u==='kg'?3:1)} ${u}/giorno</div></div>`:'<div class="small mut">durata non stimabile</div>'}</div>
+      ${pct!=null?`<div style="height:6px;background:#0a1a24;border-radius:4px;margin-top:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div>`:''}
+      ${i.expDays!=null?`<div class="small" style="margin-top:6px;color:${i.expDays<0?'var(--bad)':i.expDays<30?'var(--warn)':'var(--mut)'}">${i.expDays<0?'Scaduto':'Scade'} il ${fdate(num(it.expiry),true)}</div>`:''}
+      <button class="btn sm sec" data-strefill="${it.id}" style="margin-top:8px">Nuova confezione</button></div>`;
+  }
+  return h;
+}
+function stockForm(){
+  const x=stockEdit, t=x.type||'aio';
+  return `<div class="card"><h2>${x.id?'Modifica prodotto':'Nuovo prodotto'}</h2><form id="fSt">
+    <div class="row"><div class="f" style="flex:2"><label>Nome</label><input name="name" value="${esc(x.name||'')}" placeholder="es. Yorah All In One"></div><div class="f"><label>Tipo</label><select name="type" id="stType">${Object.entries(STOCK_T).map(([k,[l]])=>`<option value="${k}" ${t===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Quantità attuale (<span id="stU">${STOCK_T[t][1]}</span>)</label><input name="qty" inputmode="decimal" value="${x.id?String(Math.round(stockInfo(x).rem*100)/100).replace('.',','):''}"></div><div class="f"><label>Confezione piena (facolt.)</label><input name="size" inputmode="decimal" value="${num(x.size)!=null?String(x.size).replace('.',','):''}"></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Scadenza (facolt.)</label><input type="date" name="expiry" value="${num(x.expiry)?toInput(num(x.expiry)).slice(0,10):''}"></div>
+      <div class="f ${t==='reagent'?'':'hide'}" id="stParam"><label>Test di</label><select name="param">${Object.keys(P).map(p=>`<option value="${p}" ${x.param===p?'selected':''}>${P[p].n}</option>`).join('')}</select></div>
+      <div class="f ${t==='salt'?'':'hide'}" id="stSalt"><label>Grammi per litro</label><input name="saltGL" inputmode="decimal" value="${esc(String(x.saltGL||36).replace('.',','))}"></div></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="stCancel">Annulla</button></div></form></div>`;
+}
+/* ---------- Attrezzatura ---------- */
+const GEAR_T={pump:'Pompa di movimento',ret:'Pompa di risalita',light:'Plafoniera',skim:'Schiumatoio',heat:'Riscaldatore',ato:'Rabbocco',doser:'Dosometrica',ro:'Osmosi',ctrl:'Controller',other:'Altro'};
+let gearEdit=null;
+function vGear(){
+  const tot=S.gear.reduce((a,g)=>a+(num(g.price)||0),0);
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><span><b>${S.gear.length}</b> <span class="small mut">apparecchi${tot?` · valore ${eur(tot)}`:''}</span></span></div><button class="btn" id="grAdd" style="margin-top:10px;width:100%">+ Aggiungi apparecchio</button></div>`;
+  if(gearEdit) h+=gearForm();
+  if(!S.gear.length) return h+`<div class="card small mut">Registra pompe, plafoniera, schiumatoio, riscaldatore…: data di acquisto, garanzia e manutenzioni collegate.</div>`;
+  for(const g of [...S.gear].sort((a,b)=>(a.type||'').localeCompare(b.type||''))){
+    const age=g.purchased?Math.floor((Date.now()-g.purchased)/DAY):null, w=num(g.warranty);
+    const linked=S.tasks.filter(t=>t.gear===g.id);
+    h+=`<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(g.name)}</b> <span class="tag">${GEAR_T[g.type]||GEAR_T.other}</span>${g.brand?`<div class="small mut">${esc(g.brand)}</div>`:''}</div><div class="acts"><button class="btn sm sec" data-gredit="${g.id}">✎</button>${delBtn('gear',g.id)}</div></div>
+      <div class="small" style="margin-top:6px">${g.purchased?`Acquistato il ${fdate(g.purchased,true)} (${age>=365?fmt(age/365,1)+' anni':age+' giorni'})`:''}${num(g.price)!=null?` · ${eur(num(g.price))}`:''}</div>
+      ${w?`<div class="small" style="color:${w<Date.now()?'var(--mut)':'var(--ok)'}">${w<Date.now()?'Garanzia scaduta il ':'In garanzia fino al '}${fdate(w,true)}</div>`:''}
+      ${g.note?`<div class="small mut" style="margin-top:4px">${esc(g.note)}</div>`:''}
+      ${linked.length?`<div class="small" style="margin-top:6px">🔧 ${linked.map(t=>`${esc(t.name)} · ${cadence(t)}`).join('<br>🔧 ')}</div>`:`<button class="btn sm sec" data-grtask="${g.id}" style="margin-top:8px">+ Scadenza di manutenzione</button>`}</div>`;
+  }
+  return h;
+}
+function gearForm(){
+  const g=gearEdit;
+  return `<div class="card"><h2>${g.id?'Modifica apparecchio':'Nuovo apparecchio'}</h2><form id="fGr">
+    <div class="row"><div class="f" style="flex:2"><label>Nome</label><input name="name" value="${esc(g.name||'')}" placeholder="es. Jebao SLW-10"></div><div class="f"><label>Tipo</label><select name="type">${Object.entries(GEAR_T).map(([k,l])=>`<option value="${k}" ${(g.type||'pump')===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Marca / modello</label><input name="brand" value="${esc(g.brand||'')}"></div><div class="f"><label>Prezzo €</label><input name="price" inputmode="decimal" value="${num(g.price)!=null?String(g.price).replace('.',','):''}"></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Data acquisto</label><input type="date" name="purchased" value="${g.purchased?toInput(g.purchased).slice(0,10):''}"></div><div class="f"><label>Garanzia fino al</label><input type="date" name="warranty" value="${num(g.warranty)?toInput(num(g.warranty)).slice(0,10):''}"></div></div>
+    <div class="f" style="margin-top:8px"><label>Note</label><input name="note" value="${esc(g.note||'')}" placeholder="impostazioni, posizione, ricambi…"></div>
+    <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="grCancel">Annulla</button></div></form></div>`;
+}
+function bindStockGear(){
+  const app=document.getElementById('app'); const d2ts=v=>{ if(!v) return null; const d=new Date(v+'T12:00'); return isFinite(d)?d.getTime():null };
+  const sa=document.getElementById('stAdd'); if(sa) sa.onclick=()=>{ stockEdit={}; render() };
+  app.querySelectorAll('[data-stedit]').forEach(b=>b.onclick=()=>{ stockEdit=clone(S.stock.find(x=>x.id===b.dataset.stedit)); render(); window.scrollTo(0,0) });
+  app.querySelectorAll('[data-strefill]').forEach(b=>b.onclick=async()=>{ const it=S.stock.find(x=>x.id===b.dataset.strefill); if(!it) return; if(!num(it.size)){ stockEdit=clone(it); render(); toast('Indica la nuova quantità'); return }
+    await saveItem('stock',Object.assign(clone(it),{qty:num(it.size),setTs:Date.now()})); toast('Nuova confezione registrata') });
+  const f=document.getElementById('fSt');
+  if(f){ const ty=document.getElementById('stType'); ty.onchange=()=>{ document.getElementById('stU').textContent=STOCK_T[ty.value][1]; document.getElementById('stParam').classList.toggle('hide',ty.value!=='reagent'); document.getElementById('stSalt').classList.toggle('hide',ty.value!=='salt') };
+    document.getElementById('stCancel').onclick=()=>{ stockEdit=null; render() };
+    f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return } const q=num(o.qty); if(q==null){ toast('Indica la quantità attuale'); return }
+      const it=Object.assign(clone(stockEdit),{id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null});
+      if(await saveItem('stock',it)){ stockEdit=null; toast('Prodotto salvato'); render() } } }
+  const ga=document.getElementById('grAdd'); if(ga) ga.onclick=()=>{ gearEdit={}; render() };
+  app.querySelectorAll('[data-gredit]').forEach(b=>b.onclick=()=>{ gearEdit=clone(S.gear.find(x=>x.id===b.dataset.gredit)); render(); window.scrollTo(0,0) });
+  app.querySelectorAll('[data-grtask]').forEach(b=>b.onclick=async()=>{ const g=S.gear.find(x=>x.id===b.dataset.grtask); if(!g) return; const every= g.type==='skim'?7:g.type==='pump'||g.type==='ret'?90:g.type==='ro'?180:30;
+    await saveItem('tasks',{id:uid(),name:`Pulizia ${g.name}`,kind:'interval',every,gear:g.id}); toast(`Scadenza creata: ogni ${every} giorni (modificabile in Manutenzione)`) });
+  const g=document.getElementById('fGr');
+  if(g){ document.getElementById('grCancel').onclick=()=>{ gearEdit=null; render() };
+    g.onsubmit=async e=>{ e.preventDefault(); const o=formVals(g); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return }
+      const it=Object.assign(clone(gearEdit),{id:gearEdit.id||uid(),name:o.name.trim(),type:o.type,brand:(o.brand||'').trim(),price:num(o.price),purchased:d2ts(o.purchased),warranty:d2ts(o.warranty),note:(o.note||'').trim()});
+      if(await saveItem('gear',it)){ gearEdit=null; toast('Apparecchio salvato'); render() } } }
+}
+
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.5.0';
+const APP_VERSION='1.6.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -618,12 +722,12 @@ async function aiDoAction(name,i){
     const ts=i.date&&isFinite(new Date(i.date))?new Date(i.date).getTime():now; await saveItem('tests',{id:uid(),ts,v,note:String(i.note||'Inserito dall\'assistente').slice(0,300)}); await autoDone('test',ts); return 'Test registrato.' }
   return 'Azione sconosciuta.';
 }
-async function aiCall(msgs){
+async function aiCall(msgs,opt={}){
   const c=aiCfg(), key=aiKey(); if(!key) throw new Error('Manca la chiave API: inseriscila in Impostazioni → Assistente AI.');
   if(c.provider!=='anthropic') throw new Error('Fornitore non supportato.');
   let r,j;
   try{ r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:aiModel(),max_tokens:2048,system:aiSystem(),tools:AI_TOOLS,messages:msgs})}) }
+    body:JSON.stringify(Object.assign({model:aiModel(),max_tokens:opt.max||2048,system:opt.system||aiSystem(),messages:msgs},opt.noTools?{}:{tools:AI_TOOLS}))}) }
   catch(e){ throw new Error('Connessione assente o servizio non raggiungibile.') }
   try{ j=await r.json() }catch(e){ j=null }
   if(!r.ok){ const m=(j&&j.error&&j.error.message)||'';
@@ -740,8 +844,81 @@ function vAISettings(){
     <div class="f" style="margin-top:8px"><label>Chiave API</label><input id="aiKeyIn" type="password" autocomplete="off" placeholder="${k?'••••••••'+esc(k.slice(-4)):'sk-ant-…'}"></div>
     <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
     <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>
+    <hr><label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Report settimanale automatico</b><br><span class="small mut">Un riepilogo AI della vasca ogni settimana (circa 0,002 $ a report)</span></span><input type="checkbox" id="repOn" ${aiCfg().report?'checked':''} style="width:22px;height:22px;flex:none"></label>
+    ${aiCfg().report?`<div class="f" style="margin-top:8px"><label>Giorno del report</label><select id="repDay">${['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'].map((d,i)=>`<option value="${i}" ${reportDay()===i?'selected':''}>${d}</option>`).join('')}</select></div>`:''}
     <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
     ${devMode()?'<hr><button class="btn sm sec" id="devOff">Esci dalla modalità sviluppatore</button>':''}</div>`;
+}
+
+/* ---------- Funzioni Pro: report, lettura test, riconoscimento specie ---------- */
+async function aiText(content,system,max){ const r=await aiCall([{role:'user',content}],{noTools:true,system,max}); return (r.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim() }
+function parseJSON(t){ const m=/\{[\s\S]*\}/.exec(t||''); if(!m) throw new Error('Risposta non leggibile'); return JSON.parse(m[0]) }
+const TEST_PROMPT=`Leggi i valori dei test dell'acquario da questa immagine (display di un checker digitale, provetta con cartoncino colorato, schermata o referto di laboratorio ICP).
+Rispondi SOLO con un oggetto JSON, senza testo prima o dopo, in questo formato:
+{"values":{"kh":7.8},"date":null,"note":"breve descrizione di cosa hai letto"}
+Chiavi ammesse: kh (dKH), ca (ppm), mg (ppm), no3 (ppm), po4 (ppm di fosfato PO4), den (densità, es. 1.025), ph, temp (°C), k (ppm), nh4 (ppm), no2 (ppm).
+Conversioni: KH in meq/L × 2,8 = dKH; KH in ppm CaCO3 ÷ 17,86 = dKH; fosforo in ppb P (es. Hanna ULR) × 3,066 ÷ 1000 = ppm PO4; salinità in ppt → densità circa 1 + ppt × 0,00075; °F → °C.
+Se un valore è stimato dal colore, scrivilo nella nota. Ometti i valori che non riesci a leggere con ragionevole sicurezza. "date" in formato AAAA-MM-GG solo se è scritta nell'immagine.`;
+async function readTestPhoto(file){
+  const img=await blobToAiImg(file,'');
+  const t=await aiText([{type:'image',source:{type:'base64',media_type:'image/jpeg',data:img.data}},{type:'text',text:TEST_PROMPT}],'Sei un assistente che estrae dati numerici da immagini di test per acquari. Rispondi solo in JSON.',800);
+  const j=parseJSON(t); const v={}; for(const [k,x] of Object.entries(j.values||{})){ const n=num(x); if(P[k]&&n!=null) v[k]=n }
+  if(!Object.keys(v).length) throw new Error('Nessun valore leggibile nella foto');
+  const ts= j.date&&isFinite(new Date(j.date+'T12:00'))?new Date(j.date+'T12:00').getTime():null;
+  return {v,ts,note:j.note?('Letto da foto: '+j.note).slice(0,300):'Letto da foto'};
+}
+async function recognizeSpecies(blob){
+  const img=await blobToAiImg(blob,'');
+  const others=lvAlive().map(x=>`${x.name}${x.species?' ('+x.species+')':''}`).join(', ')||'nessuno';
+  const t=await aiText([{type:'image',source:{type:'base64',media_type:'image/jpeg',data:img.data}},{type:'text',text:`Identifica il pesce, corallo o invertebrato principale in questa foto di un acquario marino.
+Animali già presenti in vasca: ${others}. Volume vasca: ${vol()} L.
+Rispondi SOLO con JSON: {"name":"nome comune italiano","species":"nome scientifico","cat":"fish|sps|lps|soft|inv|cuc|other","confidence":"alta|media|bassa","note":"in una o due frasi: luce, movimento, difficoltà e compatibilità con gli animali presenti e con il volume"}`}],'Sei un esperto di acquariologia marina. Rispondi solo in JSON, in italiano.',700);
+  return parseJSON(t);
+}
+// report settimanale: generato all'apertura dell'app nel giorno scelto (o dopo), se attivo
+function reports(){ try{ return JSON.parse(lsGet('reeflog.reports'+aiSuffix())||'[]')||[] }catch(e){ return [] } }
+function reportOn(){ return isPro()&&!!aiCfg().report }
+function reportDay(){ const d=aiCfg().reportDay; return d==null?0:+d }
+function lastBoundary(){ const d=new Date(); d.setHours(0,0,0,0); while(d.getDay()!==reportDay()) d.setDate(d.getDate()-1); return d.getTime() }
+let _repBusy=false;
+async function makeReport(manual){
+  if(_repBusy) return; if(!aiKey()){ if(manual) toast('Manca la chiave API'); return }
+  _repBusy=true; if(manual) render();
+  try{
+    const data={test_ultimi_14_giorni:aiRead('get_tests',{days:14}),diario_ultimi_7_giorni:aiRead('get_events',{days:7}),dosi:aiRead('get_dosing_history',{days:30}),scadenze:aiRead('get_tasks',{}),consumi:Object.fromEntries(TRI.map(p=>[p,aiRead('get_consumption',{param:p})])),scorte:S.stock.map(it=>{ const i=stockInfo(it); return {nome:it.name,giorni_rimasti:i.days!=null?Math.round(i.days):null} })};
+    const text=await aiText([{type:'text',text:`Scrivi il report settimanale della vasca usando i dati qui sotto. Struttura con titoletti in grassetto:
+**In sintesi** (2 frasi), **Parametri** (cosa è stabile, cosa si muove), **Triade e dosaggio** (consumi e se la dose è adeguata), **Da fare questa settimana** (elenco puntato, concreto), **Consiglio** (uno solo).
+Massimo 250 parole, numeri concreti dai dati, niente premesse. Se mancano dati importanti dillo nel "Da fare".
+DATI: ${JSON.stringify(data)}`}],aiSystem(),1500);
+    const R=reports(); R.unshift({ts:Date.now(),text}); lsSet('reeflog.reports'+aiSuffix(),JSON.stringify(R.slice(0,12)));
+    toast('Report settimanale pronto');
+  }catch(e){ if(manual) toast(e.message) }
+  _repBusy=false; render();
+}
+function checkReport(){ if(!reportOn()||!aiKey()) return; const R=reports(), b=lastBoundary(); if(!R.length||R[0].ts<b) makeReport(false) }
+function vReport(){
+  const R=reports();
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><span class="small mut">${reportOn()?`Automatico ogni ${['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][reportDay()]}`:'Report automatico disattivato'}</span><button class="btn sm" id="repNow" ${_repBusy?'disabled':''}>${_repBusy?'Genero…':'Genera ora'}</button></div></div>`;
+  if(!R.length) return h+`<div class="card small mut">Nessun report ancora.</div>`;
+  h+=`<div class="card"><h2>📋 ${new Date(R[0].ts).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'})}</h2><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(R[0].text)}</div>
+    <button class="btn sm sec" data-aiask="Parliamo del report settimanale di oggi: approfondisci i punti da fare." style="margin-top:8px">✨ Approfondisci con l'assistente</button></div>`;
+  for(const r of R.slice(1)) h+=`<details class="card"><summary>${new Date(r.ts).toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'})}</summary><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(r.text)}</div></details>`;
+  return h;
+}
+function homeReport(){
+  if(!reportOn()) return ''; const R=reports(); if(!R.length||Date.now()-R[0].ts>8*DAY) return _repBusy?`<div class="card small mut">📋 Sto preparando il report della settimana…</div>`:'';
+  const plain=R[0].text.replace(/\*\*/g,'').replace(/\n+/g,' ');
+  return `<div class="card" data-go="report" style="cursor:pointer;border-color:var(--acc)"><h2>📋 Report della settimana <span class="tag">${fdate(R[0].ts)}</span></h2><div class="small">${esc(plain.slice(0,220))}${plain.length>220?'…':''}</div><div class="small" style="color:var(--acc);margin-top:6px">Leggi tutto ›</div></div>`;
+}
+function bindPro(){
+  const rn=document.getElementById('repNow'); if(rn) rn.onclick=()=>makeReport(true);
+  const ro=document.getElementById('repOn'); if(ro) ro.onchange=()=>{ lsSet('reeflog.aicfg',JSON.stringify(Object.assign(aiCfg(),{report:ro.checked}))); toast(ro.checked?'Report settimanale attivato':'Report settimanale disattivato'); render(); scheduleNotif(); if(ro.checked) checkReport() };
+  const rd=document.getElementById('repDay'); if(rd) rd.onchange=()=>{ lsSet('reeflog.aicfg',JSON.stringify(Object.assign(aiCfg(),{reportDay:+rd.value}))); render(); scheduleNotif() };
+  const tp=document.getElementById('testPhotoBtn'); if(tp) tp.onclick=()=>document.getElementById('testPhotoIn').click();
+  const sp=document.getElementById('lvAiBtn'); if(sp) sp.onclick=async()=>{ let blob=lvPendingPhoto&&lvPendingPhoto.blob; if(!blob&&lvEdit&&lvEdit.photo){ const r=await getPhoto(lvEdit.photo); blob=r&&r.blob } if(!blob){ toast('Aggiungi prima una foto'); return }
+    sp.disabled=true; sp.textContent='Riconosco…'; const keep=lvFormSnapshot();
+    try{ const j=await recognizeSpecies(blob); render(); lvFormRestore(Object.assign(keep,{name:j.name||keep.name,species:j.species||keep.species,cat:LV_CAT[j.cat]?j.cat:keep.cat,note:[keep.note,j.note].filter(Boolean).join(' · ').slice(0,300)})); toast(`Riconosciuto (affidabilità ${j.confidence||'?'}): controlla e salva`) }
+    catch(e){ render(); lvFormRestore(keep); toast(e.message) } };
 }
 
 /* ---------- Guida ---------- */
@@ -806,7 +983,12 @@ const GUIDE=[
   <p><b>Per cambiare telefono</b>: esporta dal vecchio e importa nel nuovo. <b>Non disinstallare l'app</b> senza un backup: la disinstallazione cancella i dati. Gli aggiornamenti dell'app invece li conservano.</p>`},
  {id:'ai',i:'✨',t:'Assistente AI (Pro)',b:`<p>L'assistente è una chat che <b>conosce la tua vasca</b>: legge test, consumi, dosi, cambi d'acqua, scadenze e animali, e risponde sui tuoi numeri. Lo apri da <b>Menu → Assistente AI</b>, dal riquadro del dosaggio in Home o da una foto aperta (<b>✨ Analizza</b>).</p>
   <ul><li>Domande libere, per esempio "Perché il KH scende?" o "Posso inserire un nuovo corallo?".</li><li><b>Foto</b>: allega una foto con 📷 per un parere su alghe, cyano, dinoflagellati o coralli. Una foto non basta per una diagnosi certa.</li><li><b>Azioni</b>: l'assistente può proporre di aggiungere una nota, una scadenza, un test letto da una foto o una nuova dose. Non fa nulla senza il tuo <b>Conferma</b>.</li></ul>
+  <p><b>Altre funzioni Pro</b>: in Parametri → Nuovo test, <b>✨ Leggi da foto</b> compila il modulo dalla foto del display del checker, della provetta o di un referto (controlla sempre i valori prima di salvare). Nella scheda di un animale, <b>✨ Riconosci dalla foto</b> propone nome, specie e note di compatibilità. Il <b>report settimanale</b> si attiva in Impostazioni: ogni settimana, nel giorno scelto, all'apertura dell'app viene preparato un riepilogo che trovi in Home e in Menu.</p>
   <p>Le risposte possono contenere errori: verifica sempre prima di intervenire. È una funzione del piano Pro; quando la usi, i dati della vasca vengono inviati al fornitore dell'AI solo per elaborare la risposta.</p>`},
+ {id:'scorte',i:'📦',t:'Scorte e consumabili',b:`<p>In <b>Menu → Scorte e consumabili</b> registri i prodotti con la quantità attuale. L'app la fa scendere da sola:</p>
+  <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro.</li></ul>
+  <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
+ {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Scadenza di manutenzione</b> crei una pulizia periodica collegata all'apparecchio, che poi gestisci in Manutenzione.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -817,7 +999,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -881,6 +1063,7 @@ async function rescheduleNotif(){
       S.settings=data.settings; S.tasks=data.tasks;
       try{ for(const n of notifPlan()){ if(list.length>1) n.title=`${n.title} · ${tk.name}`; n.tank=tk.id; plan.push(n) } } finally { S.settings=keep.settings; S.tasks=keep.tasks }
     }
+    if(reportOn()&&notifOn()){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri Reef Log: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
     plan.sort((a,b)=>a.ts-b.ts); plan.splice(60);
     if(!plan.length) return;
     await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
@@ -969,6 +1152,7 @@ function lvForm(){
   return `<div class="card"><h2>${isNew?'Nuovo abitante':'Modifica scheda'}</h2><form id="fLv">
     <div class="row" style="flex-wrap:nowrap;align-items:center"><button type="button" id="lvPhotoBtn" style="width:84px;height:84px;border-radius:12px;border:1px dashed var(--line);background:var(--card2);color:var(--mut);padding:0;overflow:hidden;flex:none">${th?`<img src="${th}" style="width:100%;height:100%;object-fit:cover">`:'📷<br><span style="font-size:11px">Foto</span>'}</button>
       <div style="flex:1"><div class="f"><label>Nome</label><input name="name" value="${esc(x.name||'')}" placeholder="es. Pagliaccio, Acropora verde"></div>
+      ${isPro()&&(lvPendingPhoto||x.photo)?'<button type="button" class="btn sm" id="lvAiBtn" style="margin-top:6px">✨ Riconosci dalla foto</button>':''}
       <div class="f" style="margin-top:6px"><label>Specie (facoltativo)</label><input name="species" value="${esc(x.species||'')}" placeholder="es. Amphiprion ocellaris"></div></div></div>
     <div class="row" style="margin-top:8px"><div class="f"><label>Categoria</label><select name="cat">${Object.entries(LV_CAT).map(([k,[i,l]])=>`<option value="${k}" ${ (x.cat||'fish')===k?'selected':''}>${i} ${l}</option>`).join('')}</select></div>
       <div class="f"><label>Data inserimento</label><input type="date" name="ts" value="${toInput(x.ts||Date.now()).slice(0,10)}"></div></div>
@@ -1009,7 +1193,7 @@ let Q={}; try{ Q=JSON.parse(localStorage.getItem('reeflog.queue')||'{}')||{} }ca
 function saveQ(){ try{ localStorage.setItem('reeflog.queue',JSON.stringify(Q)) }catch(e){} }
 function lastSyncTs(){ try{ return +localStorage.getItem('reeflog.lastSync')||0 }catch(e){ return 0 } }
 function enqueue(coll,id,op){ if(!id) return; Q[coll+':'+id]=op; saveQ(); scheduleSync() }
-function enqueueAll(){ for(const c of ['tests','doses','events','tasks','livestock']) for(const it of S[c]) Q[c+':'+it.id]='put'; Q['settings:main']='put'; for(const p of allPhotoMetas()) Q['photos:'+p.id]='put'; saveQ(); scheduleSync() }
+function enqueueAll(){ for(const c of COLLS) for(const it of S[c]) Q[c+':'+it.id]='put'; Q['settings:main']='put'; for(const p of allPhotoMetas()) Q['photos:'+p.id]='put'; saveQ(); scheduleSync() }
 function syncLabel(){ if(LOCAL_ONLY) return ''; if(!sbUser) return 'locale'; if(!navigator.onLine) return '⚠︎ offline'; if(syncing) return '⟳ sincronizzo…'; if(syncErr) return '⚠︎ errore sync'; const n=Object.keys(Q).length; return n?`⟳ ${n} in attesa`:'☁︎ sincronizzato' }
 function hdrHtml(){ const l=S.mode==='db'?'☁︎ sincronizzato':syncLabel(); return `${vol()} L netti${l?'<br>'+l:''}` }
 function updHdr(){ const el=document.getElementById('hdrSub'); if(el) el.innerHTML=hdrHtml() }
@@ -1027,7 +1211,7 @@ function needFull(){ try{ return localStorage.getItem('reeflog.syncUser')!==sbUs
 function onLogin(){ if(needFull()) try{ localStorage.removeItem('reeflog.cursor') }catch(e){} sync() }
 // primo collegamento di questo dispositivo: prima scarica, poi invia solo ciò che sul server manca
 function enqueueMissing(seen){
-  for(const c of ['tests','doses','events','tasks','livestock']) for(const it of S[c]) if(!seen.has(c+':'+it.id)) Q[c+':'+it.id]='put';
+  for(const c of COLLS) for(const it of S[c]) if(!seen.has(c+':'+it.id)) Q[c+':'+it.id]='put';
   for(const p of allPhotoMetas()) if(!seen.has('photos:'+p.id)) Q['photos:'+p.id]='put';
   if(!seen.has('settings:main')) Q['settings:main']='put';
   saveQ();
@@ -1176,12 +1360,14 @@ function vHome(){
       <div class="row small" style="margin-top:8px;gap:14px">${[['NH₄',nh,'nh4'],['NO₂',no2,'no2'],['NO₃',no3,'no3']].map(([n,l,p])=>`<span>${n}: <b>${l?fmt(l.v,P[p].d):'–'}</b>${l?` <span class="mut">(${fdate(l.ts)})</span>`:''}</span>`).join('')}</div>
       <canvas id="cStart" height="140" style="margin-top:8px"></canvas></div>`;
   }
-  const soon=S.tasks.filter(t=>dueDiff(t)<=2).sort((a,b)=>nextDue(a)-nextDue(b));
+  h+=homeReport();
+  const soon=S.tasks.filter(t=>dueDiff(t)<=2).sort((a,b)=>nextDue(a)-nextDue(b)); const sal=stockAlerts();
   const ltds=lastEv('tds'); const tdsBad=ltds&&num(ltds.tds)>=(num(S.settings.tdsMax)||3);
-  if(soon.length||tdsBad){
+  if(soon.length||tdsBad||sal.length){
     h+=`<div class="card"><h2>Da fare</h2><div class="list">`;
     for(const t of soon) h+=`<div class="it"><div class="body"><b>${esc(t.name)}</b>${t.bacter?`<div class="small mut">${bacterTxt()}</div>`:''}</div><div>${dueBadge(t)}</div></div>`;
     if(tdsBad) h+=`<div class="it"><div class="body"><b style="color:var(--bad)">Osmosi: TDS ${fmt(num(ltds.tds),0)} ppm</b><div class="small mut">Raggiunta la soglia: cambia le resine</div></div></div>`;
+    for(const {it,i} of sal) h+=`<div class="it" data-go="scorte" style="cursor:pointer"><div class="body"><b>📦 ${esc(it.name)}</b><div class="small mut">${i.days!=null&&i.days<7?`finisce tra circa ${fmt(Math.max(0,i.days),0)} giorni`:''}${i.days!=null&&i.days<7&&i.expDays!=null&&i.expDays<15?' · ':''}${i.expDays!=null&&i.expDays<15?(i.expDays<0?'scaduto':`scade tra ${i.expDays} giorni`):''}</div></div></div>`;
     h+=`</div><button class="btn sm sec" data-go="manut" style="margin-top:8px">Apri manutenzione</button></div>`;
   }
   h+=`<div class="card"><h2>Ultimi valori ${lt?`<span class="tag">ultimo test ${Math.floor((Date.now()-lt)/DAY)===0?'oggi':Math.floor((Date.now()-lt)/DAY)+' gg fa'}</span>`:''}</h2>`;
@@ -1261,9 +1447,9 @@ function homeDosing(){
 }
 
 function vTest(){
-  const t=editTest||{id:null,ts:Date.now(),v:{},note:''};
+  const t=editTest||(testPrefill?{id:null,ts:testPrefill.ts||Date.now(),v:testPrefill.v,note:testPrefill.note}:{id:null,ts:Date.now(),v:{},note:''});
   const ps=Object.keys(P);
-  let h=`<div class="card"><h2>${editTest?'Modifica test':'Nuovo test'}</h2><form id="fTest">
+  let h=`<div class="card"><h2>${editTest?'Modifica test':'Nuovo test'}</h2>${!editTest&&isPro()?`<button type="button" class="btn sm" id="testPhotoBtn" style="margin-bottom:10px">✨ Leggi da foto</button>${testPrefill?'<div class="banner" style="margin-top:0">Valori letti dalla foto: controllali prima di salvare.</div>':''}`:''}<form id="fTest">
     <div class="f" style="margin-bottom:8px"><label>Data e ora</label><input type="datetime-local" name="ts" value="${toInput(t.ts)}"></div>
     <div class="grid">`;
   for(const p of ps){ const last=lastVal(p);
@@ -1539,7 +1725,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -1555,6 +1741,9 @@ const VIEWS={
   sync:()=>backBar()+vSyncPage(),
   guida:()=>backBar()+vGuida(),
   ai:vAI,
+  scorte:()=>backBar()+vScorte(),
+  attrezzatura:()=>backBar()+vGear(),
+  report:()=>backBar()+vReport(),
 };
 function parseHash(){
   let hsh=(location.hash||'').slice(1); if(ALIAS[hsh]) hsh=ALIAS[hsh];
@@ -1565,7 +1754,7 @@ function parseHash(){
 function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
-  if(changed){ doneOpen=null; editTask=null; photoSel=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  if(changed){ doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
   const tab= v==='home'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
@@ -1587,6 +1776,9 @@ function vMenu(){
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
     ['ai','✨','Assistente AI',isPro()?(aiKey()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
+    ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
+    ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
+    ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
@@ -1644,7 +1836,7 @@ function bind(){
     for(const p of Object.keys(P)){ const n=num(o[p]); if(n!=null) v[p]=n }
     if(!Object.keys(v).length){ toast('Inserisci almeno un valore'); return }
     const item={id:editTest?.id||uid(),ts:fromInput(o.ts),v,note:(o.note||'').trim()};
-    if(await saveItem('tests',item)){ if(!editTest) await autoDone('test',item.ts); editTest=null; toast('Test salvato'); render() } };
+    if(await saveItem('tests',item)){ if(!editTest) await autoDone('test',item.ts); editTest=null; testPrefill=null; toast('Test salvato'); render() } };
 
   const fD=document.getElementById('fDose');
   if(fD) fD.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fD);
@@ -1663,7 +1855,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
@@ -1737,7 +1929,7 @@ function bind(){
     document.getElementById('exp').onclick=async()=>{
       const withPh=document.getElementById('bkPhotos')?.checked; if(withPh&&S.photos.length) toast('Preparo le foto…');
       const photos=withPh? await photosForBackup() : undefined;
-      const data=JSON.stringify({app:'reeflog',v:1,exported:new Date().toISOString(),tests:S.tests,doses:S.doses,events:S.events,tasks:S.tasks,livestock:S.livestock,settings:S.settings,photos},null,1);
+      const data=JSON.stringify({app:'reeflog',v:1,exported:new Date().toISOString(),...Object.fromEntries(COLLS.map(c=>[c,S[c]])),settings:S.settings,photos},null,1);
       const fn=`reeflog-backup-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.json`;
       if(CAP()){ const r=await saveFile(fn,data,'application/json'); if(r==='shared'){ localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup pronto'); render(); return } if(r==='abort') return }
       try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); toast('Backup pronto'); return } }catch(err){}
@@ -1762,7 +1954,7 @@ document.getElementById('fileIn').onchange=async e=>{
   if(!j||j.app!=='reeflog'){ toast('Non è un backup Reef Log'); return }
   toast('Importazione in corso…');
   let n=0;
-  for(const c of ['tests','doses','events','tasks','livestock']) for(const it of (j[c]||[])){ if(it&&it.id&&(c==='tasks'||c==='livestock'||isFinite(it.ts))){ if(S.mode==='db'){ try{ await base.collection(c).doc(String(it.id)).set(it); n++ }catch(err){ handleErr(err); return } } else { const a=S[c]; const i=a.findIndex(x=>x.id===it.id); if(i>=0)a[i]=it; else a.push(it); n++ } } }
+  for(const c of COLLS) for(const it of (j[c]||[])){ if(it&&it.id&&(['tasks','livestock','stock','gear'].includes(c)||isFinite(it.ts))){ if(S.mode==='db'){ try{ await base.collection(c).doc(String(it.id)).set(it); n++ }catch(err){ handleErr(err); return } } else { const a=S[c]; const i=a.findIndex(x=>x.id===it.id); if(i>=0)a[i]=it; else a.push(it); n++ } } }
   let np=0; if(Array.isArray(j.photos)) for(const p of j.photos){ try{ if(!p||!p.id||!p.data) continue; const blob=await (await fetch(p.data)).blob(); await putPhoto({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null,blob}); np++ }catch(err){} }
   if(np){ await loadPhotos(); n+=np }
   S.settings=Object.assign(clone(DEF_SETTINGS),j.settings||S.settings,{welcomed:true}); await saveSettings();
@@ -1777,6 +1969,8 @@ document.getElementById('lvPhotoIn').onchange=async e=>{ const f=e.target.files[
     const keep=lvFormSnapshot(); lvPendingPhoto={blob,thumb}; render(); lvFormRestore(keep) }catch(err){ toast('Foto non leggibile') } };
 function lvFormSnapshot(){ const f=document.getElementById('fLv'); return f?formVals(f):null }
 function lvFormRestore(o){ const f=document.getElementById('fLv'); if(!f||!o) return; for(const [k,v] of Object.entries(o)){ const el=f.elements[k]; if(el) el.value=v } const sel=document.getElementById('lvSt'); if(sel) document.getElementById('lvEndF').classList.toggle('hide',sel.value==='alive') }
+document.getElementById('testPhotoIn').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return; const b=document.getElementById('testPhotoBtn'); if(b){ b.disabled=true; b.textContent='Leggo la foto…' }
+  try{ testPrefill=await readTestPhoto(f); render(); toast('Controlla i valori e premi Salva') }catch(err){ toast(err.message); render() } };
 document.getElementById('aiPhotoIn').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return; try{ AI.pendingImg=await blobToAiImg(f,'Foto allegata'); render() }catch(err){ toast('Foto non leggibile') } };
 document.getElementById('photoIn').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addPhotos(fs) };
 window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render() } });
@@ -1790,7 +1984,7 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
     askExit(A);
   });
 })();
-applyRoute(); initStore(); initNotif(); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
+applyRoute(); initStore(); initNotif(); setTimeout(checkReport,1500); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(checkReport,800) }); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
 if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 </script>
