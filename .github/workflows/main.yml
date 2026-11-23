@@ -29,8 +29,19 @@ jobs:
       - name: Icone e schermata di avvio
         run: cp -r res/* android/app/src/main/res/
 
+      - name: Codice nativo (Google Drive e widget)
+        run: |
+          cp native/*.java android/app/src/main/java/it/reeflog/app/
+          python3 native/patch_manifest.py > /dev/null
+          grep -n "ReefWidgetProvider\|backup_rules" android/app/src/main/AndroidManifest.xml
+
       - name: Copia l'app nel progetto
         run: npx cap sync android
+
+      - name: Solo accesso Google (niente Facebook, Apple, Twitter)
+        run: |
+          printf '\nsocialLogin.google.include=true\nsocialLogin.facebook.include=false\nsocialLogin.apple.include=false\nsocialLogin.twitter.include=false\n' >> android/gradle.properties
+          tail -5 android/gradle.properties
 
       - name: Firma fissa e numero di versione
         run: |
