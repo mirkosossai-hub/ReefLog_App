@@ -162,7 +162,7 @@ const TRI = ['ca','kh','mg'];
 const TRI_COL = {ca:'#5aa9ff',kh:'#f08c3a',mg:'#b07cf2'};
 const DAY = 86400000;
 const DEF_SETTINGS = {
-  volume: 50,
+  volume: '',
   mode: 'balling',
   aio: {ca:'', kh:'', mg:''},
   conc: {ca:19.5, kh:1.0, mg:''},
@@ -189,7 +189,8 @@ function toInput(ts){ const d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTim
 function fromInput(s){ const t = new Date(s).getTime(); return isFinite(t)?t:Date.now() }
 function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
 function tgt(p){ const t=S.settings.targets?.[p]; return (t&&t.length===2&&num(t[0])!=null&&num(t[1])!=null)?[num(t[0]),num(t[1])]:P[p].t }
-function vol(){ return num(S.settings.volume)||50 }
+function volSet(){ return num(S.settings.volume)>0 }
+function vol(){ return num(S.settings.volume)||100 }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),1900) }
 const byTs = (a,b)=>a.ts-b.ts;
 
@@ -515,7 +516,7 @@ async function switchTank(id){
 function openTanks(){
   const el=document.getElementById('sheet'), T=tanks(), ct=curTank();
   el.innerHTML=`<div class="pane"><div class="row" style="justify-content:space-between;margin-bottom:10px"><b>Le tue vasche</b><button class="btn sm sec" id="tkX">✕</button></div>
-    <div class="list">${T.map(t=>{ let info=''; try{ const j=JSON.parse(localStorage.getItem(tankKey(t.id))||'null'); if(j) info=`${Object.assign({},DEF_SETTINGS,j.settings||{}).volume} L · ${(j.tests||[]).length} test` }catch(e){}
+    <div class="list">${T.map(t=>{ let info=''; try{ const j=JSON.parse(localStorage.getItem(tankKey(t.id))||'null'); if(j){ const v=num(Object.assign({},DEF_SETTINGS,j.settings||{}).volume); info=`${v?v+' L · ':''}${(j.tests||[]).length} test` } }catch(e){}
       return `<div class="it" style="align-items:center"><div class="body" data-tk="${t.id}" style="cursor:pointer"><b>${t.id===ct?'✓ ':''}${esc(t.name)}</b><div class="small mut">${info||'nuova'}</div></div>
         <div class="acts"><button class="btn sm sec" data-tkren="${t.id}">✎</button>${t.id!=='main'?`<button class="btn sm sec" data-tkdel="${t.id}">🗑</button>`:''}</div></div>` }).join('')}</div>
     <div id="tkForm" style="margin-top:10px"><div class="row" style="flex-wrap:nowrap"><input id="tkName" placeholder="Nuova vasca (es. Quarantena)" style="flex:1;min-width:0"><button class="btn" id="tkAdd" style="white-space:nowrap">+ Aggiungi</button></div></div>
@@ -588,7 +589,7 @@ async function buildPDF(days){
   y=40; doc.setTextColor(30); doc.setFontSize(10);
   h1('La vasca');
   const si=startInfo(), m=dmode(), reg=curReg(now);
-  line(`Volume netto: ${vol()} L`);
+  line(`Volume netto: ${volSet()?vol()+' L':'non impostato'}`);
   if(si) line(si.mode==='fixed'?`Avvio: giorno ${si.day} di ${si.tot}`:`Maturazione: giorno ${si.day}${si.done?' (ciclo concluso)':''}`);
   line(m==='aio'?`Dosaggio: All In One${productLabel('aio')?' '+productLabel('aio'):''}, ${fmt(rateAt('kh',now),1)} ml/giorno`: m==='reactor'?`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${fmt(num(reg.flow),1)} ml/min, KH effluente ${fmt(num(reg.effKH),1)}`:''}`:`Dosaggio: Balling${productLabel('balling')?' '+productLabel('balling'):''} - Ca ${fmt(rateAt('ca',now),1)}, KH ${fmt(rateAt('kh',now),1)}, Mg ${fmt(rateAt('mg',now),1)} ml/giorno`);
   y+=3; h1('Ultimi valori');
@@ -868,7 +869,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.8.3';
+const APP_VERSION='1.8.4';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -909,7 +910,7 @@ function r2(v,d=2){ return v==null||!isFinite(v)?null:Math.round(v*10**d)/10**d 
 function aiOverview(){
   const s=S.settings, si=startInfo(), now=Date.now(), reg=curReg(now), o=[];
   if(MULTI&&tanks().length>1) o.push(`Vasca: ${tankName()}.`);
-  o.push(`Volume netto: ${vol()} L.`);
+  o.push(`Volume netto: ${volSet()?vol()+' L':'non impostato (chiedi all\'utente di impostarlo)'}.`);
   if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
   else o.push('Vasca già matura (nessun avvio in corso).');
   const m=dmode();
@@ -1458,7 +1459,7 @@ function lastSyncTs(){ try{ return +localStorage.getItem('reeflog.lastSync')||0 
 function enqueue(coll,id,op){ if(!id) return; Q[coll+':'+id]=op; saveQ(); scheduleSync() }
 function enqueueAll(){ for(const c of COLLS) for(const it of S[c]) Q[c+':'+it.id]='put'; Q['settings:main']='put'; for(const p of allPhotoMetas()) Q['photos:'+p.id]='put'; saveQ(); scheduleSync() }
 function syncLabel(){ if(LOCAL_ONLY) return ''; if(!sbUser) return 'locale'; if(!navigator.onLine) return '⚠︎ offline'; if(syncing) return '⟳ sincronizzo…'; if(syncErr) return '⚠︎ errore sync'; const n=Object.keys(Q).length; return n?`⟳ ${n} in attesa`:'☁︎ sincronizzato' }
-function hdrHtml(){ const l=S.mode==='db'?'☁︎ sincronizzato':syncLabel(); return `${vol()} L netti${l?'<br>'+l:''}` }
+function hdrHtml(){ const l=S.mode==='db'?'☁︎ sincronizzato':syncLabel(); return `${volSet()?vol()+' L netti':'<a href="#impostazioni" style="color:var(--warn);text-decoration:none">imposta volume</a>'}${l?'<br>'+l:''}` }
 function updHdr(){ const el=document.getElementById('hdrSub'); if(el) el.innerHTML=hdrHtml() }
 let _st=null; function scheduleSync(ms=1500){ updHdr(); if(!sbUser) return; clearTimeout(_st); _st=setTimeout(sync,ms) }
 function loadScript(src){ return new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=src; sc.onload=res; sc.onerror=rej; document.head.appendChild(sc) }) }
@@ -1669,6 +1670,7 @@ function balTxt(p,d){ // bilancio apporto-consumo
   return d>0?`<span style="color:var(--warn)">+${fmt(d,p==='kh'?2:1)} accumulo</span>`:`<span style="color:var(--bad)">${fmt(d,p==='kh'?2:1)} in calo</span>`;
 }
 function homeDosing(){
+  if(!volSet()) return `<div class="card"><h2>Triade</h2><div class="small">Per calcolare consumi e dosi serve il <b>volume netto</b> della vasca.</div><button class="btn sm" style="margin-top:8px" onclick="go('impostazioni')">Imposta il volume</button></div>`;
   const mode=dmode(), V=vol(), now=Date.now();
   if(mode==='balling'){
     let h=`<div class="card"><h2>Triade · Balling</h2><div class="tri"><div></div><div class="h">Dose attuale</div><div class="h">Consumo/g</div><div class="h">Dose suggerita</div>`;
@@ -1738,6 +1740,7 @@ function delBtn(coll,id){ const k=coll+':'+id; return confirmKey===k?`<button cl
 
 function vDosi(){
   const mode=dmode(), now=Date.now(), V=vol(), reg=curReg(now);
+  if(!volSet()) return `<div class="card"><div class="small">Prima imposta il <b>volume netto</b> della vasca: serve per calcolare consumi e dosi.</div><button class="btn sm" style="margin-top:8px" onclick="go('impostazioni')">Imposta il volume</button></div>`;
   const cur={ca:rateAt('ca',now),kh:rateAt('kh',now),mg:rateAt('mg',now)};
   const desc={balling:'Tre soluzioni separate per calcio, KH e magnesio, ognuna con la sua dose.',aio:'Un unico prodotto che apporta calcio, KH e magnesio insieme, in proporzioni fisse: si regola una sola dose.',reactor:'Il reattore scioglie il materiale calcareo e restituisce un effluente ricco di calcio e KH: si regolano portata e KH dell\'effluente. Il magnesio di solito si integra a parte.'};
   let h=`<div class="card"><h2>Metodo</h2><div class="chips" style="margin:0">
@@ -1868,7 +1871,7 @@ function vDiario(){
 function vSet(){
   const s=S.settings;
   let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Vasca</h2>
-    <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" value="${esc(String(s.volume).replace('.',','))}"></div></div>
+    <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" placeholder="es. 200" value="${esc(String(s.volume??'').replace('.',','))}"></div></div>
     <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
   <div class="card"><h2>Avvio e manutenzione</h2>
     <div class="f"><label>Avvio / maturazione</label><select name="startMode" id="stMode">
