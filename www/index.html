@@ -375,7 +375,7 @@ function lastEv(type){ return S.events.filter(e=>e.type===type).sort(byTs).pop()
 function tdsState(v){ const mx=num(S.settings.tdsMax)||3; if(v==null) return ['','–']; if(v>=mx) return ['s-bad','cambia le resine']; if(v>0) return ['s-warn','accettabile']; return ['s-ok','perfetto'] }
 async function saveFile(fn,data,mime){
   const C=CAP(); const plug=n=>C&&((C.Plugins&&C.Plugins[n])||(C.registerPlugin&&C.registerPlugin(n))); const FS=plug('Filesystem'), SH=plug('Share');
-  if(FS&&SH){ try{ const w=await FS.writeFile({path:fn,data,directory:'CACHE',encoding:'utf8'}); await SH.share({title:fn,files:[w.uri],dialogTitle:'Salva o invia '+fn}); return 'shared' }catch(err){ if(/cancel/i.test(String(err&&err.message))) return 'abort'; console.warn(err) } }
+  if(FS&&SH){ try{ let w; if(data instanceof Blob){ const b64=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(',')[1]); fr.readAsDataURL(data) }); w=await FS.writeFile({path:fn,data:b64,directory:'CACHE'}) } else w=await FS.writeFile({path:fn,data,directory:'CACHE',encoding:'utf8'}); await SH.share({title:fn,files:[w.uri],dialogTitle:'Salva o invia '+fn}); return 'shared' }catch(err){ if(/cancel/i.test(String(err&&err.message))) return 'abort'; console.warn(err) } }
   try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); return 'saved' } }catch(err){}
   try{ const f=new File([data],fn,{type:mime}); if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:fn}); return 'shared' } }catch(err){ if(err&&err.name==='AbortError') return 'abort' }
   try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data],{type:mime})); a.download=fn; document.body.appendChild(a); a.click(); a.remove(); return 'downloaded' }catch(err){}
@@ -519,6 +519,99 @@ function openTanks(){
     saveTanks(tanks().filter(x=>x.id!==id)); scheduleNotif(); toast('Vasca eliminata'); openTanks() });
 }
 
+/* ---------- Catalogo prodotti (valori dichiarati dai produttori, verificati a novembre 2026) ---------- */
+// AIO: di quanto alza 1 ml in 100 L. Balling: Ca mg/ml, KH meq/ml, Mg mg/ml (formato delle Impostazioni)
+const CATALOG={
+ aio:[
+  {id:'tm-afr',brand:'Tropic Marin',name:'All-For-Reef (liquido)',ca:0.4,kh:0.056,mg:0.019,src:'Tropic Marin: 500 ml contengono 20.000 mg Ca, 2.800 °dKH, 950 mg Mg'},
+  {id:'af-3in1',brand:'Aquaforest',name:'Component 3in1',ca:0.4,kh:0.058,mg:0.019,src:'Aquaforest: 1 L contiene 40.000 mg Ca, 1.900 mg Mg, 5.800 °KH'},
+  {id:'yorah-aio',brand:'Yorah',name:'All In One',ca:0.3,kh:0.05,mg:0.28,src:'Etichetta: 10 ml in 100 L alzano Ca di 3 mg/L, Mg di 2,8 mg/L, KH di 0,5 dKH'},
+ ],
+ balling:[
+  {id:'rs-found',brand:'Red Sea',name:'Reef Foundation A, B, C (liquidi)',ca:200,kh:3.571,mg:100,src:'Red Sea: 1 ml in 100 L alza Ca di 2 ppm (A), KH di 0,1 dKH (B), Mg di 1 ppm (C)'},
+  {id:'af-123',brand:'Aquaforest',name:'Component 1+ 2+ 3+',ca:18,kh:0.893,mg:1.52,src:'Aquaforest: 25 ml in 100 L alzano Ca di 4,5 ppm, KH di 0,65 dKH, Mg di 0,38 ppm'},
+  {id:'af-pro',brand:'Aquaforest',name:'Components Pro 1, 2, 3',ca:36,kh:1.857,mg:3.04,src:'Aquaforest: 25 ml in 100 L alzano Ca di 9 ppm, KH di 1,3 dKH, Mg di 0,76 ppm'},
+  {id:'af-lab',brand:'Aquaforest',name:'Ca Plus, KH Plus, Mg Plus (Lab)',ca:200,kh:1.786,mg:100,src:'Aquaforest: 10 ml in 100 L alzano Ca di 20 ppm, KH di 0,5 dKH, Mg di 10 ppm'},
+  {id:'fm-light',brand:'Fauna Marin',name:'Balling Light (soluzioni preparate)',ca:110,kh:1.786,mg:50,src:'Fauna Marin: 10 ml in 100 L alzano KH di 0,5 dKH, Ca di 11 mg/L, Mg di 5 mg/L'},
+ ],
+};
+function catOptions(kind,sel){ const L=CATALOG[kind]; const brands=[...new Set(L.map(x=>x.brand))];
+  return `<option value="">— Scegli il prodotto —</option>`+brands.map(b=>`<optgroup label="${esc(b)}">${L.filter(x=>x.brand===b).map(x=>`<option value="${x.id}" ${sel===x.id?'selected':''}>${esc(x.brand+' · '+x.name)}</option>`).join('')}</optgroup>`).join('')+`<option value="other" ${sel==='other'?'selected':''}>Altro (marca non in elenco)</option>` }
+function catSrc(kind,id){ const x=CATALOG[kind].find(y=>y.id===id); return x?`Fonte: ${esc(x.src)}. Verificato a novembre 2026: controlla comunque l'etichetta della tua confezione, le formule possono cambiare.`:'' }
+function productLabel(kind){ const s=S.settings, id=kind==='aio'?s.aioProd:s.ballProd; if(id==='other'){ const b=kind==='aio'?s.aioBrand:s.ballBrand, n=kind==='aio'?s.aioName:s.ballName; return [b,n].filter(Boolean).join(' ')||'' } const x=CATALOG[kind].find(y=>y.id===id); return x?`${x.brand} ${x.name}`:'' }
+function bindCatalog(){
+  const f=document.getElementById('fSet'); if(!f) return;
+  for(const kind of ['aio','balling']){ const sel=document.getElementById(kind==='aio'?'aioProd':'ballProd'); if(!sel) continue;
+    sel.onchange=()=>{ const v=sel.value, x=CATALOG[kind].find(y=>y.id===v), pre=kind==='aio'?'a_':'c_';
+      document.getElementById(kind+'Other').classList.toggle('hide',v!=='other');
+      document.getElementById(kind+'Src').innerHTML=catSrc(kind,v);
+      if(x) for(const p of TRI) f.elements[pre+p].value=String(x[p]).replace('.',',');
+      if(x) toast('Valori compilati: premi Salva impostazioni') } }
+}
+/* ---------- Report PDF (gratuito, generato sul telefono) ---------- */
+let pdfDays=90, _pdfBusy=false;
+function loadJsPDF(){ return window.jspdf?Promise.resolve():loadScript('jspdf.umd.min.js') }
+function chartImg(p,from,to){
+  const pts=testsWith(p).filter(t=>t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); if(pts.length<2||!window.Chart) return null;
+  const c=document.createElement('canvas'); c.width=900; c.height=300; const [lo,hi]=tgt(p);
+  const ch=new Chart(c,{type:'line',data:{datasets:[{data:pts,borderColor:'#0e7c8c',backgroundColor:'#0e7c8c',pointRadius:3,borderWidth:2,tension:.2},{data:[{x:from,y:lo},{x:to,y:lo}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1},{data:[{x:from,y:hi},{x:to,y:hi}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1,fill:'-1',backgroundColor:'rgba(63,169,108,.08)'}]},
+    options:{animation:false,responsive:false,devicePixelRatio:1,plugins:{legend:{display:false}},scales:{x:{type:'linear',min:from,max:to,ticks:{color:'#444',maxTicksLimit:6,callback:v=>new Date(v).toLocaleDateString('it-IT',{day:'2-digit',month:'short'})},grid:{color:'#e5e5e5'}},y:{ticks:{color:'#444'},grid:{color:'#e5e5e5'}}}}});
+  const w=document.createElement('canvas'); w.width=c.width; w.height=c.height; const g=w.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,w.width,w.height); g.drawImage(c,0,0);
+  const url=w.toDataURL('image/jpeg',0.85); ch.destroy(); return url;
+}
+async function buildPDF(days){
+  await loadJsPDF(); const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
+  const W=210, M=14, now=Date.now(), from=days?now-days*DAY:Math.min(now,...S.tests.map(t=>t.ts)); let y=M;
+  const clean=t=>String(t??'').replace(/[₀-₉]/g,c=>'0123456789'[c.charCodeAt(0)-8320]).replace(/≈/g,'circa ').replace(/[^\x00-\xFF€–—…’“”]/g,'');
+  const page=()=>{ if(y>275){ doc.addPage(); y=M } };
+  const h1=(t)=>{ page(); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(14,124,140); doc.text(clean(t),M,y); y+=7; doc.setTextColor(30); doc.setFont('helvetica','normal'); doc.setFontSize(10) };
+  const line=(t,ind=0)=>{ const L=doc.splitTextToSize(clean(t),W-2*M-ind); for(const l of L){ page(); doc.text(l,M+ind,y); y+=5 } };
+  // intestazione
+  doc.setFillColor(7,19,28); doc.rect(0,0,W,30,'F'); doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('Reef Log',M,14);
+  doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.text(clean(`${MULTI&&tanks().length>1?tankName()+' · ':''}Report dal ${new Date(from).toLocaleDateString('it-IT')} al ${new Date(now).toLocaleDateString('it-IT')}`),M,22);
+  y=40; doc.setTextColor(30); doc.setFontSize(10);
+  h1('La vasca');
+  const si=startInfo(), m=dmode(), reg=curReg(now);
+  line(`Volume netto: ${vol()} L`);
+  if(si) line(si.mode==='fixed'?`Avvio: giorno ${si.day} di ${si.tot}`:`Maturazione: giorno ${si.day}${si.done?' (ciclo concluso)':''}`);
+  line(m==='aio'?`Dosaggio: All In One${productLabel('aio')?' '+productLabel('aio'):''}, ${fmt(rateAt('kh',now),1)} ml/giorno`: m==='reactor'?`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${fmt(num(reg.flow),1)} ml/min, KH effluente ${fmt(num(reg.effKH),1)}`:''}`:`Dosaggio: Balling${productLabel('balling')?' '+productLabel('balling'):''} - Ca ${fmt(rateAt('ca',now),1)}, KH ${fmt(rateAt('kh',now),1)}, Mg ${fmt(rateAt('mg',now),1)} ml/giorno`);
+  y+=3; h1('Ultimi valori');
+  doc.setFont('helvetica','bold'); doc.text('Parametro',M,y); doc.text('Valore',M+55,y); doc.text('Data',M+90,y); doc.text('Range',M+120,y); doc.text('Stato',M+155,y); y+=2; doc.setDrawColor(200); doc.line(M,y,W-M,y); y+=5; doc.setFont('helvetica','normal');
+  for(const p of Object.keys(P)){ const l=lastVal(p); if(!l) continue; page(); const [lo,hi]=tgt(p), st=status(p,l.v);
+    doc.text(clean(P[p].n),M,y); doc.text(clean(`${fmt(l.v,P[p].d)} ${P[p].u}`),M+55,y); doc.text(new Date(l.ts).toLocaleDateString('it-IT'),M+90,y); doc.text(clean(`${lo} - ${hi}`),M+120,y);
+    const [c,t]= st==='s-ok'?[[40,150,80],'nel range']:st==='s-warn'?[[200,140,0],'attenzione']:[[200,50,50],'fuori range']; doc.setTextColor(...c); doc.text(t,M+155,y); doc.setTextColor(30); y+=6 }
+  // grafici
+  const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]); let any=false;
+  for(const p of ps){ const img=chartImg(p,from,now); if(!img) continue; if(!any){ y+=3; h1('Andamento dei parametri'); any=true }
+    if(y>205){ doc.addPage(); y=M } doc.setFont('helvetica','bold'); doc.text(clean(`${P[p].n}${P[p].u?' ('+P[p].u+')':''}`),M,y); doc.setFont('helvetica','normal'); y+=2; doc.addImage(img,'JPEG',M,y,W-2*M,(W-2*M)/3); y+=(W-2*M)/3+6 }
+  // consumi
+  const cons=TRI.map(p=>[p,avgCons(p)]).filter(([,c])=>c!=null);
+  if(cons.length){ y+=2; h1('Consumi medi (ultimi 30 giorni)'); for(const [p,c] of cons) line(`${P[p].n}: ${fmt(c,p==='kh'?2:1)} ${P[p].u} al giorno`) }
+  const D=S.doses.filter(d=>d.ts>=from).sort(byTs);
+  if(D.length){ y+=3; h1('Variazioni di dosaggio'); for(const d of D) line(`${new Date(d.ts).toLocaleDateString('it-IT')}: `+(d.kind==='aio'?`All In One ${fmt(num(d.aio),1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow),1)} ml/min, KH effluente ${fmt(num(d.effKH),1)}`:`Ca ${fmt(num(d.ca)||0,1)}, KH ${fmt(num(d.kh)||0,1)}, Mg ${fmt(num(d.mg)||0,1)} ml/g`)+(d.note?` - ${d.note}`:'')) }
+  const WC=S.events.filter(e=>e.type==='wc'&&e.ts>=from).sort(byTs);
+  if(WC.length){ y+=3; h1(`Cambi d'acqua (${WC.length}, totale ${fmt(WC.reduce((a,e)=>a+(num(e.liters)||0),0),1)} L)`); for(const e of WC) line(`${new Date(e.ts).toLocaleDateString('it-IT')}: ${fmt(num(e.liters),1)} L${e.note?' - '+e.note:''}`) }
+  const MT=S.events.filter(e=>['maint','dose','note','live','tds'].includes(e.type)&&e.ts>=from).sort(byTs);
+  if(MT.length){ y+=3; h1('Diario: manutenzioni e note'); const lab={maint:'Manutenzione',dose:'Dose manuale',note:'Nota',live:'Inserimento',tds:'TDS osmosi'};
+    for(const e of MT) line(`${new Date(e.ts).toLocaleDateString('it-IT')}: ${lab[e.type]}${e.type==='tds'?' '+fmt(num(e.tds),0)+' ppm':''}${e.note?' - '+e.note:''}`) }
+  const al=lvAlive(); if(al.length){ y+=3; h1('Animali e coralli in vasca'); for(const x of al) line(`${x.name}${x.species?' ('+x.species+')':''}${(num(x.qty)||1)>1?' x'+x.qty:''} - ${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]}, inserito il ${new Date(x.ts).toLocaleDateString('it-IT')}`) }
+  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Generato con Reef Log il ${new Date().toLocaleDateString('it-IT')} - pagina ${i} di ${n}`,M,292) }
+  return doc.output('blob');
+}
+function vPDF(){
+  return `<div class="card"><div class="small">Crea un documento PDF con i dati della vasca da condividere su un forum, con il negoziante o da archiviare: ultimi valori, grafici, consumi, dosaggi, cambi d'acqua, manutenzioni e animali.</div>
+    <div class="chips" style="margin-top:10px">${[[30,'30 giorni'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${pdfDays===d?'on':''}" data-pdfd="${d}">${l}</button>`).join('')}</div>
+    <button class="btn" id="pdfGo" style="width:100%;margin-top:6px" ${_pdfBusy?'disabled':''}>${_pdfBusy?'Creo il PDF…':'📄 Crea il report PDF'}</button>
+    <div class="small mut" style="margin-top:6px">Il PDF viene creato sul telefono, senza inviare dati a nessuno.</div></div>`;
+}
+function bindPDF(){
+  document.querySelectorAll('[data-pdfd]').forEach(b=>b.onclick=()=>{ pdfDays=+b.dataset.pdfd; render() });
+  const g=document.getElementById('pdfGo'); if(g) g.onclick=async()=>{ if(!S.tests.length){ toast('Inserisci almeno un test'); return } _pdfBusy=true; render();
+    try{ const blob=await buildPDF(pdfDays); const fn=`reeflog-report-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.pdf`;
+      const r=await saveFile(fn,blob,'application/pdf'); if(r&&r!=='abort') toast('Report PDF pronto') }catch(e){ console.warn(e); toast('Errore nella creazione del PDF') }
+    _pdfBusy=false; render() };
+}
+
 /* ---------- Scorte e consumabili ---------- */
 const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
 let stockEdit=null;
@@ -639,7 +732,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.6.1';
+const APP_VERSION='1.7.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -684,7 +777,7 @@ function aiOverview(){
   if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
   else o.push('Vasca già matura (nessun avvio in corso).');
   const m=dmode();
-  if(m==='aio') o.push(`Dosaggio: All In One, ${fmt(rateAt('kh',now),1)} ml/giorno. 1 ml in 100 L alza: Ca ${s.aio?.ca||'?'} ppm, KH ${s.aio?.kh||'?'} dKH, Mg ${s.aio?.mg||'?'} ppm.`);
+  if(m==='aio') o.push(`Dosaggio: All In One${productLabel('aio')?' ('+productLabel('aio')+')':''}, ${fmt(rateAt('kh',now),1)} ml/giorno. 1 ml in 100 L alza: Ca ${s.aio?.ca||'?'} ppm, KH ${s.aio?.kh||'?'} dKH, Mg ${s.aio?.mg||'?'} ppm.`);
   else if(m==='reactor') o.push(`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${reg.flow} ml/min, KH effluente ${reg.effKH}${reg.effCa!=null?', Ca effluente '+reg.effCa:''}${reg.mg?', Mg integrato '+reg.mg+' ml/g':''}`:' (nessuna regolazione registrata)'}.`);
   else o.push(`Dosaggio: Balling 3 parti, Ca ${rateAt('ca',now)} ml/g, KH ${rateAt('kh',now)} ml/g, Mg ${rateAt('mg',now)} ml/g.`);
   const vals=[]; for(const p of Object.keys(P)){ const l=lastVal(p); if(l){ const [lo,hi]=tgt(p); vals.push(`${P[p].n} ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} (${new Date(l.ts).toLocaleDateString('it-IT')}, range ${lo}–${hi})`) } }
@@ -960,7 +1053,8 @@ const GUIDE=[
  {id:'test',i:'🧪',t:'Test e parametri',b:`<p>In <b>Parametri → Nuovo test</b> compila solo i valori che hai misurato. Gli altri lasciali vuoti: non contano come zero. Il segnaposto grigio mostra l'ultimo valore. Puoi usare la virgola.</p>
   <p>Puoi cambiare data e ora se inserisci un test fatto prima. In <b>Storico</b> modifichi (✎) o elimini (🗑, due tocchi) i test.</p>
   <p>In <b>Grafici</b> c'è un grafico per ogni parametro spuntato in Impostazioni, con la fascia verde del range. I pulsanti in alto cambiano il periodo. In fondo ci sono i consumi della triade e la storia delle dosi.</p>`},
- {id:'triade',i:'💧',t:'Triade e dosaggio',b:`<p>In <b>Menu → Dosaggio</b> scegli il metodo:</p>
+ {id:'triade',i:'💧',t:'Triade e dosaggio',b:`<p>In <b>Impostazioni</b>, nei riquadri All In One e Balling, puoi scegliere il <b>prodotto dal catalogo</b>: i valori si compilano da soli, con la fonte indicata. Se il tuo prodotto non c'è, scegli <b>Altro</b>, scrivi marca e nome e inserisci i valori dell'etichetta.</p>
+  <p>In <b>Menu → Dosaggio</b> scegli il metodo:</p>
   <ul><li><b>Balling 3 parti</b>: tre soluzioni separate. In Impostazioni inserisci la concentrazione di ognuna (mg/ml per Ca e Mg, meq/ml per il KH), oppure calcolala dalla ricetta in grammi per litro.</li>
   <li><b>All In One</b>: un unico prodotto che apporta calcio, KH e magnesio insieme, in proporzioni fisse. Si regola <b>una sola dose</b>. In Impostazioni inserisci di quanto alza <b>1 ml in 100 L</b> ciascun elemento; se l'etichetta parla di 10 ml, dividi per 10. In Home vedi, per ogni elemento, consumo, apporto della dose attuale e bilancio (in equilibrio, in accumulo o in calo).</li>
   <li><b>Reattore di calcio</b>: registra la <b>portata</b> dell'effluente (ml/min) e il suo <b>KH</b>, e se lo misuri anche il calcio. L'apporto si calcola come portata × (valore dell'effluente − valore in vasca); se il calcio non è misurato si stima dal KH. Il magnesio integrato a parte usa la soluzione Mg delle Impostazioni. In Home trovi la <b>portata consigliata</b> per coprire il consumo di KH.</li></ul>
@@ -1006,6 +1100,8 @@ const GUIDE=[
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
+ {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
+  <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -1016,7 +1112,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -1646,10 +1742,16 @@ function vSet(){
     <hr>
     <div class="row"><div class="f"><label>Soglia TDS cambio resine (ppm)</label><input name="tdsMax" inputmode="decimal" value="${esc(String(s.tdsMax??3).replace('.',','))}"></div></div></div>
   <div class="card"><h2>All In One</h2>
-    <div class="small mut" style="margin-bottom:6px">Dati dall'etichetta del prodotto: di quanto alza <b>1 ml in 100 L</b>.</div>
+    <div class="f"><label>Prodotto</label><select id="aioProd" name="aioProd">${catOptions('aio',s.aioProd||'')}</select></div>
+    <div id="aioOther" class="row ${s.aioProd==='other'?'':'hide'}" style="margin-top:8px"><div class="f"><label>Marca</label><input name="aioBrand" value="${esc(s.aioBrand||'')}"></div><div class="f"><label>Prodotto</label><input name="aioName" value="${esc(s.aioName||'')}"></div></div>
+    <div id="aioSrc" class="small mut" style="margin:6px 0">${catSrc('aio',s.aioProd)}</div>
+    <div class="small mut" style="margin-bottom:6px">Di quanto alza <b>1 ml in 100 L</b> (compilato dal catalogo o dall'etichetta):</div>
     <div class="row">${TRI.map(p=>`<div class="f"><label>${P[p].n} (${P[p].u})</label><input name="a_${p}" inputmode="decimal" value="${esc(String(s.aio?.[p]??'').replace('.',','))}"></div>`).join('')}</div>
     <div class="small mut" style="margin-top:4px">Se l'etichetta indica altri volumi (es. 1 ml in 50 L), converti: valore × 50 / 100.</div></div>
   <div class="card"><h2>Soluzioni Balling 3 parti</h2><div class="small mut" style="margin-bottom:6px">Con il reattore di calcio, la concentrazione del magnesio serve per l'integrazione separata.</div>
+    <div class="f"><label>Prodotto</label><select id="ballProd" name="ballProd">${catOptions('balling',s.ballProd||'')}</select></div>
+    <div id="ballingOther" class="row ${s.ballProd==='other'?'':'hide'}" style="margin-top:8px"><div class="f"><label>Marca</label><input name="ballBrand" value="${esc(s.ballBrand||'')}"></div><div class="f"><label>Prodotto</label><input name="ballName" value="${esc(s.ballName||'')}"></div></div>
+    <div id="ballingSrc" class="small mut" style="margin:6px 0">${catSrc('balling',s.ballProd)}</div>
     <div class="row">
       <div class="f"><label>Calcio: mg Ca per ml</label><input name="c_ca" inputmode="decimal" value="${esc(String(s.conc.ca??'').replace('.',','))}"></div>
       <div class="f"><label>KH: meq per ml</label><input name="c_kh" inputmode="decimal" value="${esc(String(s.conc.kh??'').replace('.',','))}"></div>
@@ -1751,7 +1853,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -1768,6 +1870,7 @@ const VIEWS={
   guida:()=>backBar()+vGuida(),
   ai:vAI,
   scorte:()=>backBar()+vScorte(),
+  pdf:()=>backBar()+vPDF(),
   attrezzatura:()=>backBar()+vGear(),
   report:()=>backBar()+vReport(),
 };
@@ -1805,6 +1908,7 @@ function vMenu(){
     ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
     ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
     ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
+    ['pdf','📄','Report PDF','documento con valori, grafici e storico da condividere'],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
@@ -1881,7 +1985,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
@@ -1945,6 +2049,7 @@ function bind(){
       s.conc={ca:num(o.c_ca)??'',kh:num(o.c_kh)??'',mg:num(o.c_mg)??''};
       s.salt={ca:num(o.s_ca)??'',kh:num(o.s_kh)??'',mg:num(o.s_mg)??''};
       s.aio={ca:num(o.a_ca)??'',kh:num(o.a_kh)??'',mg:num(o.a_mg)??''};
+      s.aioProd=o.aioProd||''; s.aioBrand=(o.aioBrand||'').trim(); s.aioName=(o.aioName||'').trim(); s.ballProd=o.ballProd||''; s.ballBrand=(o.ballBrand||'').trim(); s.ballName=(o.ballName||'').trim();
       s.startMode=o.startMode||'none'; s.startDate=o.startDate||''; s.startDays=Math.max(1,Math.round(num(o.startDays)||28)); s.bacterOn=!!o.bacterOn; s.bactName=(o.bactName||'').trim()||'Bacter Mix + Bacter Nitrix'; s.bacterPer250=num(o.bacterPer250)??5; s.tdsMax=num(o.tdsMax)??3;
       if(s.startMode!=='none'&&!s.startDate){ toast('Indica la data di avvio'); return }
       s.targets={}; s.showParams=[];
