@@ -25,6 +25,21 @@ nav button.plus span{display:flex;align-items:center;justify-content:center;widt
 nav button.plus svg{stroke:#04222a;stroke-width:2.6;width:24px;height:24px}
 #sheet{position:fixed;inset:0;z-index:15;background:#000a;display:flex;align-items:center;justify-content:center;padding:16px}
 #sheet.hide{display:none}
+select.px{display:none}
+.selbtn{background:#0a1a24;border:1px solid var(--line);color:var(--tx);border-radius:9px;padding:9px 30px 9px 10px;font:inherit;width:100%;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative;min-height:38px;display:block}
+.selbtn::after{content:'';position:absolute;right:12px;top:50%;width:7px;height:7px;border-right:2px solid var(--mut);border-bottom:2px solid var(--mut);transform:translateY(-70%) rotate(45deg)}
+.selbtn:disabled{opacity:.5}
+#pick{position:fixed;inset:0;z-index:20;background:#000a;display:flex;align-items:flex-end;justify-content:center}
+#pick.hide{display:none}
+#pick .pp{background:var(--card);border:1px solid var(--line);border-bottom:0;border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:72vh;display:flex;flex-direction:column;box-shadow:0 -10px 40px #000a;animation:pup .16s ease-out;padding-bottom:env(safe-area-inset-bottom)}
+@keyframes pup{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+#pick .ph{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 8px;font-weight:700}
+#pick .pl{overflow-y:auto;padding:0 8px 10px}
+#pick .po{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:var(--tx);font:inherit;text-align:left;padding:13px 10px;border-radius:10px}
+#pick .po span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pick .po.on{background:var(--card2);color:var(--acc,#2ec4d6);font-weight:600}
+#pick .po.on::after{content:'✓'}
+#pick .pg{font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;padding:10px 10px 4px}
 #sheet .pane{background:var(--card);border:1px solid var(--line);border-radius:18px;width:100%;max-width:440px;padding:16px;box-shadow:0 12px 40px #000a;animation:pop .15s ease-out}
 @keyframes pop{from{transform:scale(.94);opacity:0}to{transform:none;opacity:1}}
 #sheet .acts{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
@@ -116,7 +131,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <button data-v="vasca"><svg viewBox="0 0 24 24"><path d="M3 12c3-4 7-5 11-2l4-3v10l-4-3c-4 3-8 2-11-2z"/><circle cx="8" cy="11" r=".8"/></svg>Vasca</button>
   <button data-v="menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Menu</button>
 </nav>
-<div id="sheet" class="hide"></div>
+<div id="sheet" class="hide"></div><div id="pick" class="hide"></div>
 <div class="toast" id="toast"></div>
 <input type="file" id="fileIn" accept="application/json,.json" class="hide">
 <input type="file" id="photoIn" accept="image/*" multiple class="hide">
@@ -524,20 +539,20 @@ function openTanks(){
 // AIO: di quanto alza 1 ml in 100 L. Balling: Ca mg/ml, KH meq/ml, Mg mg/ml (formato delle Impostazioni)
 const CATALOG={
  aio:[
-  {id:'tm-afr',brand:'Tropic Marin',name:'All-For-Reef (liquido)',ca:0.4,kh:0.056,mg:0.019,src:'Tropic Marin: 500 ml contengono 20.000 mg Ca, 2.800 °dKH, 950 mg Mg'},
-  {id:'af-3in1',brand:'Aquaforest',name:'Component 3in1',ca:0.4,kh:0.058,mg:0.019,src:'Aquaforest: 1 L contiene 40.000 mg Ca, 1.900 mg Mg, 5.800 °KH'},
-  {id:'yorah-aio',brand:'Yorah',name:'Balling Y1 - All In One',ca:0.3,kh:0.05,mg:0.28,src:'Yorah, etichetta del flacone: 10 ml in 100 L alzano Ca di 3 mg/L, Mg di 2,8 mg/L, KH di 0,5 dKH'},
+  {id:'tm-afr',label:'Tropic Marin All-For-Reef',brand:'Tropic Marin',name:'All-For-Reef (liquido)',ca:0.4,kh:0.056,mg:0.019,src:'Tropic Marin: 500 ml contengono 20.000 mg Ca, 2.800 °dKH, 950 mg Mg'},
+  {id:'af-3in1',label:'Aquaforest 3in1',brand:'Aquaforest',name:'Component 3in1',ca:0.4,kh:0.058,mg:0.019,src:'Aquaforest: 1 L contiene 40.000 mg Ca, 1.900 mg Mg, 5.800 °KH'},
+  {id:'yorah-aio',label:'Yorah Balling Y1 AIO',brand:'Yorah',name:'Balling Y1 - All In One',ca:0.3,kh:0.05,mg:0.28,src:'Yorah, etichetta del flacone: 10 ml in 100 L alzano Ca di 3 mg/L, Mg di 2,8 mg/L, KH di 0,5 dKH'},
  ],
  balling:[
-  {id:'rs-found',brand:'Red Sea',name:'Reef Foundation A, B, C (liquidi)',ca:200,kh:3.571,mg:100,src:'Red Sea: 1 ml in 100 L alza Ca di 2 ppm (A), KH di 0,1 dKH (B), Mg di 1 ppm (C)'},
-  {id:'af-123',brand:'Aquaforest',name:'Component 1+ 2+ 3+',ca:18,kh:0.893,mg:1.52,src:'Aquaforest: 25 ml in 100 L alzano Ca di 4,5 ppm, KH di 0,65 dKH, Mg di 0,38 ppm'},
-  {id:'af-pro',brand:'Aquaforest',name:'Components Pro 1, 2, 3',ca:36,kh:1.857,mg:3.04,src:'Aquaforest: 25 ml in 100 L alzano Ca di 9 ppm, KH di 1,3 dKH, Mg di 0,76 ppm'},
-  {id:'af-lab',brand:'Aquaforest',name:'Ca Plus, KH Plus, Mg Plus (Lab)',ca:200,kh:1.786,mg:100,src:'Aquaforest: 10 ml in 100 L alzano Ca di 20 ppm, KH di 0,5 dKH, Mg di 10 ppm'},
-  {id:'fm-light',brand:'Fauna Marin',name:'Balling Light (soluzioni preparate)',ca:110,kh:1.786,mg:50,src:'Fauna Marin: 10 ml in 100 L alzano KH di 0,5 dKH, Ca di 11 mg/L, Mg di 5 mg/L'},
+  {id:'rs-found',label:'Red Sea Foundation ABC',brand:'Red Sea',name:'Reef Foundation A, B, C (liquidi)',ca:200,kh:3.571,mg:100,src:'Red Sea: 1 ml in 100 L alza Ca di 2 ppm (A), KH di 0,1 dKH (B), Mg di 1 ppm (C)'},
+  {id:'af-123',label:'Aquaforest 1+ 2+ 3+',brand:'Aquaforest',name:'Component 1+ 2+ 3+',ca:18,kh:0.893,mg:1.52,src:'Aquaforest: 25 ml in 100 L alzano Ca di 4,5 ppm, KH di 0,65 dKH, Mg di 0,38 ppm'},
+  {id:'af-pro',label:'Aquaforest Pro 1-2-3',brand:'Aquaforest',name:'Components Pro 1, 2, 3',ca:36,kh:1.857,mg:3.04,src:'Aquaforest: 25 ml in 100 L alzano Ca di 9 ppm, KH di 1,3 dKH, Mg di 0,76 ppm'},
+  {id:'af-lab',label:'Aquaforest Lab Ca/KH/Mg',brand:'Aquaforest',name:'Ca Plus, KH Plus, Mg Plus (Lab)',ca:200,kh:1.786,mg:100,src:'Aquaforest: 10 ml in 100 L alzano Ca di 20 ppm, KH di 0,5 dKH, Mg di 10 ppm'},
+  {id:'fm-light',label:'Fauna Marin Balling Light',brand:'Fauna Marin',name:'Balling Light (soluzioni preparate)',ca:110,kh:1.786,mg:50,src:'Fauna Marin: 10 ml in 100 L alzano KH di 0,5 dKH, Ca di 11 mg/L, Mg di 5 mg/L'},
  ],
 };
 function catOptions(kind,sel){ const L=CATALOG[kind]; const brands=[...new Set(L.map(x=>x.brand))];
-  return `<option value="">— Scegli il prodotto —</option>`+brands.map(b=>`<optgroup label="${esc(b)}">${L.filter(x=>x.brand===b).map(x=>`<option value="${x.id}" ${sel===x.id?'selected':''}>${esc(x.brand+' · '+x.name)}</option>`).join('')}</optgroup>`).join('')+`<option value="other" ${sel==='other'?'selected':''}>Altro (marca non in elenco)</option>` }
+  return `<option value="">Scegli il prodotto</option>`+brands.map(b=>L.filter(x=>x.brand===b).map(x=>`<option value="${x.id}" ${sel===x.id?'selected':''}>${esc(x.label||x.brand+' '+x.name)}</option>`).join('')).join('')+`<option value="other" ${sel==='other'?'selected':''}>Altro (non in elenco)</option>` }
 function catSrc(kind,id){ const x=CATALOG[kind].find(y=>y.id===id); return x?`Fonte: ${esc(x.src)}. Verificato a novembre 2026: controlla comunque l'etichetta della tua confezione, le formule possono cambiare.`:'' }
 function productLabel(kind){ const s=S.settings, id=kind==='aio'?s.aioProd:s.ballProd; if(id==='other'){ const b=kind==='aio'?s.aioBrand:s.ballBrand, n=kind==='aio'?s.aioName:s.ballName; return [b,n].filter(Boolean).join(' ')||'' } const x=CATALOG[kind].find(y=>y.id===id); return x?`${x.brand} ${x.name}`:'' }
 function bindCatalog(){
@@ -853,7 +868,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.8.1';
+const APP_VERSION='1.8.2';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -2068,6 +2083,28 @@ function askExit(A){
   document.getElementById('exNo').onclick=closeSheet;
   document.getElementById('exYes').onclick=()=>{ closeSheet(); A.exitApp() };
 }
+/* ---------- Menu a tendina dell'app (sostituisce quello di Android: una voce per riga) ---------- */
+function selLabel(sel){ const o=sel.options[sel.selectedIndex]; return o?o.textContent:'' }
+function enhanceSelects(root=document){
+  root.querySelectorAll('select:not(.px)').forEach(sel=>{
+    sel.classList.add('px'); const b=document.createElement('button'); b.type='button'; b.className='selbtn'; sel._btn=b; sel.after(b);
+    b.onclick=()=>openPick(sel); sel.addEventListener('change',()=>{ b.textContent=selLabel(sel) });
+  });
+  root.querySelectorAll('select.px').forEach(sel=>{ const b=sel._btn; if(!b) return; b.textContent=selLabel(sel); b.disabled=sel.disabled; b.title=selLabel(sel) });
+}
+function openPick(sel){
+  const el=document.getElementById('pick'), lab=sel.closest('.f')?.querySelector('label')?.textContent||'Scegli';
+  let h=`<div class="pp"><div class="ph"><span>${esc(lab)}</span><button class="btn sm sec" id="pkX">✕</button></div><div class="pl">`, i=0;
+  for(const c of sel.children){ if(c.tagName==='OPTGROUP'){ h+=`<div class="pg">${esc(c.label)}</div>`; for(const o of c.children) h+=pickOpt(o,i++) } else h+=pickOpt(c,i++) }
+  el.innerHTML=h+`</div></div>`; el.classList.remove('hide');
+  el.onclick=e=>{ if(e.target===el) closePick() }; document.getElementById('pkX').onclick=closePick;
+  el.querySelectorAll('[data-pi]').forEach(b=>b.onclick=()=>{ const o=sel.options[+b.dataset.pi]; closePick(); if(!o||o.disabled) return; if(sel.value!==o.value){ sel.value=o.value; sel.dispatchEvent(new Event('change',{bubbles:true})) } if(sel._btn) sel._btn.textContent=selLabel(sel) });
+  el.querySelector('.po.on')?.scrollIntoView({block:'center'});
+  function pickOpt(o,k){ return `<button class="po ${o.selected?'on':''}" data-pi="${k}" ${o.disabled?'disabled':''}><span>${esc(o.textContent)}</span></button>` }
+}
+function closePick(){ const el=document.getElementById('pick'); if(el) el.classList.add('hide') }
+function pickOpen(){ const el=document.getElementById('pick'); return el&&!el.classList.contains('hide') }
+new MutationObserver(()=>{ cancelAnimationFrame(enhanceSelects._r); enhanceSelects._r=requestAnimationFrame(()=>enhanceSelects()) }).observe(document.body,{childList:true,subtree:true});
 function closeSheet(){ const el=document.getElementById('sheet'); if(el) el.classList.add('hide') }
 
 /* ---------- Eventi UI ---------- */
@@ -2235,6 +2272,7 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
 // Tasto indietro di Android (app nativa): chiude finestre, torna alla sezione precedente, poi esce
 (function(){ const C=CAP(); if(!C) return; const A=(C.Plugins&&C.Plugins.App)||(C.registerPlugin&&C.registerPlugin('App')); if(!A||!A.addListener) return;
   A.addListener('backButton',()=>{
+    if(pickOpen()){ closePick(); return }
     if(!document.getElementById('sheet').classList.contains('hide')){ closeSheet(); return }
     if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render(); return }
     if(view==='vasca'&&lvEdit){ lvEdit=null; lvPendingPhoto=null; render(); return }
