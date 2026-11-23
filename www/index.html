@@ -39,6 +39,7 @@ nav button.plus svg{stroke:#04222a;stroke-width:2.6;width:24px;height:24px}
 .back{display:flex;align-items:center;gap:8px;margin:6px 0 2px}
 .back button{background:none;border:0;color:var(--acc);font:inherit;font-size:15px;padding:6px 0}
 .back h1{font-size:18px;margin:0 0 0 auto;font-weight:700}
+.bub{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;font-size:14.5px;line-height:1.5;word-wrap:break-word}.bub p{margin:4px 0}.bub ul{margin:4px 0;padding-left:18px}.bub.me{background:var(--acc);color:#04222a;margin-left:auto;border-bottom-right-radius:4px;white-space:pre-wrap}.bub.ai{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}.tchip{font-size:11px;color:var(--mut);margin:2px 0 2px 4px}
 .guide{font-size:15px;line-height:1.55}.guide p{margin:8px 0}.guide ul,.guide ol{margin:6px 0;padding-left:20px}.guide li{margin:5px 0}
 .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:10px 0}
 .card h2{font-size:14px;margin:0 0 10px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.6px;display:flex;align-items:center;gap:8px}
@@ -120,6 +121,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <input type="file" id="fileIn" accept="application/json,.json" class="hide">
 <input type="file" id="photoIn" accept="image/*" multiple class="hide">
 <input type="file" id="lvPhotoIn" accept="image/*" class="hide">
+<input type="file" id="aiPhotoIn" accept="image/*" class="hide">
 <div id="ov" class="ov hide"></div>
 
 <script>
@@ -411,7 +413,7 @@ function dayLabel(ts){ const si=startInfo(); if(!si) return ''; const d=Math.flo
 function vFoto(){
   const sel=photoSel;
   let h=`<div class="card"><h2>Foto della vasca <span class="tag">${S.photos.length}</span></h2>
-    <div class="row"><button class="btn" id="addPhoto">📷 Aggiungi foto</button>${S.photos.length>=2?`<button class="btn sec" id="cmpBtn">${sel?'Annulla confronto':'Confronta'}</button>`:''}${S.photos.length>=2&&!sel?`<button class="btn sec" id="cmpFirst">Prima vs ora</button>`:''}</div>
+    <div class="row"><button class="btn" id="addPhoto">📷 Aggiungi foto</button>${S.photos.length>=2?`<button class="btn sec" id="cmpBtn">${sel?'Annulla confronto':'Confronta'}</button>`:''}</div>
     ${sel?`<div class="small" style="margin-top:8px;color:var(--acc)">Tocca due foto da confrontare (${sel.length}/2)</div>`:''}
     <div class="small mut" style="margin-top:6px">Le foto restano su questo telefono (ridotte a 1600 px). Per salvarle altrove usa il backup con foto in Impostazioni.</div></div>`;
   if(!S.photos.length) return h+`<div class="card mut small">Ancora nessuna foto. Scattane una oggi: tra qualche settimana sarà bello confrontarla.</div>`;
@@ -434,9 +436,10 @@ async function openViewer(id){
     ovUrls.forEach(u=>URL.revokeObjectURL(u)); ovUrls=[];
     const meta=list[idx]; const rec=await getPhoto(meta.id); const url=rec&&rec.blob?URL.createObjectURL(rec.blob):meta.thumb; if(rec&&rec.blob) ovUrls.push(url);
     o.innerHTML=`<div class="top"><div style="flex:1"><b>${new Date(meta.ts).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</b><div class="small" style="color:#bbb">${dayLabel(meta.ts)}${dayLabel(meta.ts)?' dall\'avvio · ':''}${idx+1} di ${list.length}</div></div>
-      <button class="btn sm sec" id="ovDel">🗑</button><button class="btn sm sec" id="ovX">✕</button></div>
+      ${isPro()?'<button class="btn sm" id="ovAI">✨ Analizza</button>':''}<button class="btn sm sec" id="ovDel">🗑</button><button class="btn sm sec" id="ovX">✕</button></div>
       <div class="stage"><img src="${url}" alt="">${idx<list.length-1?'<button class="nav" id="ovPrev" style="left:4px">‹</button>':''}${idx>0?'<button class="nav" id="ovNext" style="right:4px">›</button>':''}</div>
       <div class="row" style="margin-top:8px"><input id="ovNote" placeholder="Nota (es. nuovo corallo, alga in calo…)" value="${esc(meta.note)}" style="flex:1"><input type="date" id="ovDate" value="${toInput(meta.ts).slice(0,10)}" style="width:150px"></div>`;
+    const oa=document.getElementById('ovAI'); if(oa) oa.onclick=async()=>{ oa.disabled=true; const r=await getPhoto(meta.id); if(!r||!r.blob) return; const img=await blobToAiImg(r.blob,`Foto del ${fdate(meta.ts,true)}${meta.note?' · '+meta.note:''}`); closeOv(); aiAsk(`Analizza questa foto della mia vasca (${fdate(meta.ts,true)}${dayLabel(meta.ts)?', '+dayLabel(meta.ts)+' dell\'avvio':''}${meta.note?', nota: '+meta.note:''}). Cosa vedi? Ci sono alghe, cyano, dinoflagellati o problemi sui coralli? Collega quello che vedi ai miei parametri.`,img) };
     document.getElementById('ovX').onclick=ovClose;
     const pv=document.getElementById('ovPrev'); if(pv) pv.onclick=()=>{ idx++; show() };
     const nx=document.getElementById('ovNext'); if(nx) nx.onclick=()=>{ idx--; show() };
@@ -475,6 +478,230 @@ async function photosForBackup(){ const out=[]; for(const m of allPhotoMetas()){
 
 
 
+
+/* ---------- Assistente AI (Pro) ---------- */
+const APP_VERSION='1.4.0';
+// Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
+const AI_PROVIDERS={
+  anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
+};
+function lsGet(k){ try{ return localStorage.getItem(k) }catch(e){ return null } }
+function lsSet(k,v){ try{ if(v==null) localStorage.removeItem(k); else localStorage.setItem(k,v) }catch(e){} }
+function devMode(){ return lsGet('reeflog.dev')==='1' }
+// Unico punto di controllo del piano Pro: oggi interruttore sviluppatore, in futuro abbonamento Google Play
+function isPro(){ return lsGet('reeflog.pro')==='1' }
+function aiCfg(){ let c={}; try{ c=JSON.parse(lsGet('reeflog.aicfg')||'{}')||{} }catch(e){} return Object.assign({provider:'anthropic',model:''},c) }
+function aiKey(){ return lsGet('reeflog.aikey')||'' }
+function aiModel(){ const c=aiCfg(); return c.model||AI_PROVIDERS[c.provider].model }
+function aiUsage(){ try{ return JSON.parse(lsGet('reeflog.aiusage')||'{"in":0,"out":0,"n":0}') }catch(e){ return {in:0,out:0,n:0} } }
+function aiCost(u){ const p=AI_PROVIDERS[aiCfg().provider].price; return (u.in*p[0]+u.out*p[1])/1e6 }
+
+const AI={dec:{},msgs:[],busy:false,pendingImg:null,draft:'',confirm:null,error:''};
+try{ AI.msgs=JSON.parse(lsGet('reeflog.aichat')||'[]')||[] }catch(e){ AI.msgs=[] }
+try{ AI.dec=JSON.parse(lsGet('reeflog.aidec')||'{}')||{} }catch(e){ AI.dec={} }
+function aiSave(){ // salva la conversazione senza le immagini (pesanti)
+  const light=AI.msgs.map(m=>({role:m.role,content:Array.isArray(m.content)?m.content.map(b=>b.type==='image'?{type:'text',text:'[foto allegata]'}:b):m.content}));
+  lsSet('reeflog.aichat',JSON.stringify(light.slice(-40))); lsSet('reeflog.aidec',JSON.stringify(AI.dec||{}));
+}
+
+function aiSystem(){
+  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef). Rispondi sempre in italiano, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
+Hai accesso ai dati reali della vasca dell'utente tramite gli strumenti: usali per basare le risposte sui suoi numeri invece che su considerazioni generiche. Non inventare valori: se un dato manca, dillo e suggerisci quale test fare.
+Come calcola l'app: il consumo giornaliero tra due test consecutivi = (valore iniziale + quanto dosato + effetto dei cambi d'acqua − valore finale) / giorni. Con l'All In One un solo prodotto apporta Ca, KH e Mg in proporzioni fisse. Con il reattore di calcio l'apporto = portata × (valore effluente − valore in vasca).
+Prudenza: suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno, calcio e magnesio a step), segnala quando un valore sembra un errore di misura, e per problemi seri (morie, valori estremi) consiglia di verificare con un secondo test o un negoziante esperto.
+Azioni: puoi proporre di aggiungere una nota, una scadenza, un test letto da una foto o di modificare la dose usando gli strumenti dedicati. L'utente vedrà una richiesta di conferma: proponi un'azione solo quando è utile o richiesta, e spiega prima il perché.
+Se ricevi una foto, descrivi cosa vedi con cautela (una foto non basta per una diagnosi certa), indica le ipotesi più probabili e collegale ai parametri (es. nitrati e fosfati per alghe, cyano e dinoflagellati).
+Oggi è ${new Date().toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}.
+
+RIEPILOGO DELLA VASCA (aggiornato ora):
+${aiOverview()}`;
+}
+function r2(v,d=2){ return v==null||!isFinite(v)?null:Math.round(v*10**d)/10**d }
+function aiOverview(){
+  const s=S.settings, si=startInfo(), now=Date.now(), reg=curReg(now), o=[];
+  o.push(`Volume netto: ${vol()} L.`);
+  if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
+  else o.push('Vasca già matura (nessun avvio in corso).');
+  const m=dmode();
+  if(m==='aio') o.push(`Dosaggio: All In One, ${fmt(rateAt('kh',now),1)} ml/giorno. 1 ml in 100 L alza: Ca ${s.aio?.ca||'?'} ppm, KH ${s.aio?.kh||'?'} dKH, Mg ${s.aio?.mg||'?'} ppm.`);
+  else if(m==='reactor') o.push(`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${reg.flow} ml/min, KH effluente ${reg.effKH}${reg.effCa!=null?', Ca effluente '+reg.effCa:''}${reg.mg?', Mg integrato '+reg.mg+' ml/g':''}`:' (nessuna regolazione registrata)'}.`);
+  else o.push(`Dosaggio: Balling 3 parti, Ca ${rateAt('ca',now)} ml/g, KH ${rateAt('kh',now)} ml/g, Mg ${rateAt('mg',now)} ml/g.`);
+  const vals=[]; for(const p of Object.keys(P)){ const l=lastVal(p); if(l){ const [lo,hi]=tgt(p); vals.push(`${P[p].n} ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} (${new Date(l.ts).toLocaleDateString('it-IT')}, range ${lo}–${hi})`) } }
+  o.push(vals.length?'Ultimi valori: '+vals.join('; ')+'.':'Nessun test registrato.');
+  const cons=TRI.map(p=>{ const c=avgCons(p); return c!=null?`${P[p].n} ${fmt(c,p==='kh'?2:1)} ${P[p].u}/g`:null }).filter(Boolean);
+  if(cons.length) o.push('Consumo medio ultimi 30 giorni: '+cons.join(', ')+'.');
+  const wc=S.events.filter(e=>e.type==='wc').sort(byTs).pop(); if(wc) o.push(`Ultimo cambio d'acqua: ${new Date(wc.ts).toLocaleDateString('it-IT')}, ${wc.liters} L.`);
+  const al=lvAlive(); if(al.length) o.push(`Animali in vasca: ${al.map(x=>`${x.name}${(num(x.qty)||1)>1?' ×'+x.qty:''} (${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]})`).join(', ')}.`);
+  const lt=lastEv('tds'); if(lt) o.push(`Osmosi: ultimo TDS ${lt.tds} ppm.`);
+  return o.join('\n');
+}
+const AI_TOOLS=[
+ {name:'get_tests',description:'Restituisce i test dei parametri dell\'acqua registrati, dal più vecchio al più recente.',input_schema:{type:'object',properties:{param:{type:'string',enum:Object.keys(P),description:'Parametro: '+Object.entries(P).map(([k,v])=>k+'='+v.n).join(', ')+'. Se omesso, tutti.'},days:{type:'integer',description:'Ultimi N giorni (predefinito 60).'}}}},
+ {name:'get_consumption',description:'Bilancio tra test consecutivi per calcio, KH o magnesio: valori, quanto dosato, effetto cambi d\'acqua e consumo giornaliero calcolato.',input_schema:{type:'object',properties:{param:{type:'string',enum:['ca','kh','mg']}},required:['param']}},
+ {name:'get_dosing_history',description:'Storico delle variazioni di dose o regolazioni del reattore.',input_schema:{type:'object',properties:{days:{type:'integer'}}}},
+ {name:'get_events',description:'Voci del diario: cambi d\'acqua (wc), dosi manuali (dose), manutenzioni (maint), inserimenti (live), note (note), letture TDS e osmosi.',input_schema:{type:'object',properties:{days:{type:'integer'},type:{type:'string'}}}},
+ {name:'get_tasks',description:'Scadenze di manutenzione ricorrenti con prossima data.',input_schema:{type:'object',properties:{}}},
+ {name:'get_livestock',description:'Animali e coralli registrati con categoria, data di inserimento, stato.',input_schema:{type:'object',properties:{include_lost:{type:'boolean'}}}},
+ {name:'add_note',description:'Propone di aggiungere una nota al diario. Richiede conferma dell\'utente.',input_schema:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+ {name:'add_task',description:'Propone di creare una scadenza ricorrente. Usa every_days oppure month_days. Richiede conferma.',input_schema:{type:'object',properties:{name:{type:'string'},every_days:{type:'integer'},month_days:{type:'array',items:{type:'integer'}},water_change:{type:'boolean'}},required:['name']}},
+ {name:'set_dose',description:'Propone una nuova dose giornaliera per il metodo in uso (Balling: ca_ml, kh_ml, mg_ml; All In One: aio_ml; reattore: flow_ml_min, effluent_kh, effluent_ca). Richiede conferma.',input_schema:{type:'object',properties:{ca_ml:{type:'number'},kh_ml:{type:'number'},mg_ml:{type:'number'},aio_ml:{type:'number'},flow_ml_min:{type:'number'},effluent_kh:{type:'number'},effluent_ca:{type:'number'},reason:{type:'string'}},required:['reason']}},
+ {name:'add_test',description:'Propone di registrare un test (per esempio letto da una foto del kit o di un referto). Valori con le chiavi dei parametri. Richiede conferma.',input_schema:{type:'object',properties:{values:{type:'object',description:'Es. {"kh":7.8,"ca":420}'},date:{type:'string',description:'Data ISO, se diversa da oggi'},note:{type:'string'}},required:['values']}},
+];
+const AI_ACTIONS=new Set(['add_note','add_task','set_dose','add_test']);
+const dIt=ts=>new Date(ts).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+function aiRead(name,inp){
+  const since=d=>Date.now()-(d||60)*DAY;
+  if(name==='get_tests'){ const T=S.tests.filter(t=>t.ts>=since(inp.days)).sort(byTs).map(t=>{ const v=inp.param?{[inp.param]:t.v[inp.param]}:t.v; return {data:dIt(t.ts),...v,...(t.note?{nota:t.note}:{})} }).filter(x=>!inp.param||x[inp.param]!=null); return T.length?T:'Nessun test nel periodo.' }
+  if(name==='get_consumption'){ const I=intervals(inp.param); return I.length?I.slice(-10).map(x=>({da:dIt(x.t1),a:dIt(x.t2),giorni:r2(x.days,1),inizio:x.c1,fine:x.c2,dosato_effetto:r2(x.added,3),cambi_acqua_effetto:r2(x.wc,3),consumo_giornaliero:r2(x.cons,3)})):'Servono almeno due test.' }
+  if(name==='get_dosing_history') return S.doses.filter(d=>d.ts>=since(inp.days||180)).sort(byTs).map(d=>({dal:dIt(d.ts),...d,id:undefined,ts:undefined}));
+  if(name==='get_events') return S.events.filter(e=>e.ts>=since(inp.days)&&(!inp.type||e.type===inp.type)).sort(byTs).map(e=>({data:dIt(e.ts),...e,id:undefined,ts:undefined}));
+  if(name==='get_tasks') return S.tasks.map(t=>({nome:t.name,ricorrenza:cadence(t),ultima:t.lastDone?dIt(t.lastDone):null,prossima:new Date(nextDue(t)).toLocaleDateString('it-IT')}));
+  if(name==='get_livestock') return S.livestock.filter(x=>inp.include_lost||(x.status||'alive')==='alive').map(x=>({nome:x.name,specie:x.species||null,categoria:(LV_CAT[x.cat||'other']||LV_CAT.other)[1],quantita:x.qty||1,inserito:new Date(x.ts).toLocaleDateString('it-IT'),stato:LV_ST[x.status||'alive'],note:x.note||null}));
+  return 'Strumento sconosciuto.';
+}
+function aiActionText(name,i){
+  if(name==='add_note') return `Aggiungere al diario la nota:<br><i>"${esc(i.text)}"</i>`;
+  if(name==='add_task') return `Creare la scadenza <b>${esc(i.name)}</b>, ${i.month_days&&i.month_days.length?'il '+i.month_days.join(' e il ')+' di ogni mese':'ogni '+(i.every_days||7)+' giorni'}${i.water_change?' (cambio d\'acqua)':''}`;
+  if(name==='set_dose'){ const m=dmode(); const d= m==='aio'?`All In One <b>${fmt(num(i.aio_ml),1)} ml/g</b>`: m==='reactor'?`portata <b>${fmt(num(i.flow_ml_min),1)} ml/min</b>${i.effluent_kh!=null?', KH effluente '+fmt(num(i.effluent_kh),1):''}`:`Ca <b>${fmt(num(i.ca_ml),1)}</b>, KH <b>${fmt(num(i.kh_ml),1)}</b>, Mg <b>${fmt(num(i.mg_ml),1)}</b> ml/g`;
+    return `Registrare una nuova dose da oggi: ${d}${i.reason?`<br><span class="mut">${esc(i.reason)}</span>`:''}` }
+  if(name==='add_test') return `Registrare un test${i.date?' del '+esc(new Date(i.date).toLocaleDateString('it-IT')):''}: `+Object.entries(i.values||{}).filter(([k])=>P[k]).map(([k,v])=>`${P[k].n} <b>${fmt(num(v),P[k].d)}</b>`).join(', ');
+  return name;
+}
+async function aiDoAction(name,i){
+  const now=Date.now();
+  if(name==='add_note'){ await saveItem('events',{id:uid(),ts:now,type:'note',note:String(i.text||'').slice(0,500)}); return 'Nota aggiunta al diario.' }
+  if(name==='add_task'){ const t={id:uid(),name:String(i.name).slice(0,80),wc:!!i.water_change}; if(Array.isArray(i.month_days)&&i.month_days.length){ t.kind='monthly'; t.days=i.month_days.map(Number).filter(d=>d>=1&&d<=31) } else { t.kind='interval'; t.every=Math.max(1,Math.round(num(i.every_days)||7)) } await saveItem('tasks',t); return 'Scadenza creata.' }
+  if(name==='set_dose'){ const m=dmode(); const cur=curReg(now)||{};
+    const item= m==='aio'?{kind:'aio',aio:num(i.aio_ml)??num(cur.aio)??0} : m==='reactor'?{kind:'reactor',flow:num(i.flow_ml_min)??num(cur.flow)??0,effKH:num(i.effluent_kh)??num(cur.effKH),effCa:num(i.effluent_ca)??num(cur.effCa),mg:num(cur.mg)||0} : {kind:'balling',ca:num(i.ca_ml)??(num(cur.ca)||0),kh:num(i.kh_ml)??(num(cur.kh)||0),mg:num(i.mg_ml)??(num(cur.mg)||0)};
+    await saveItem('doses',Object.assign({id:uid(),ts:now,note:'Proposta dall\'assistente: '+String(i.reason||'').slice(0,200)},item)); return 'Nuova dose registrata.' }
+  if(name==='add_test'){ const v={}; for(const [k,x] of Object.entries(i.values||{})){ const n=num(x); if(P[k]&&n!=null) v[k]=n } if(!Object.keys(v).length) return 'Nessun valore valido: test non registrato.';
+    const ts=i.date&&isFinite(new Date(i.date))?new Date(i.date).getTime():now; await saveItem('tests',{id:uid(),ts,v,note:String(i.note||'Inserito dall\'assistente').slice(0,300)}); await autoDone('test',ts); return 'Test registrato.' }
+  return 'Azione sconosciuta.';
+}
+async function aiCall(msgs){
+  const c=aiCfg(), key=aiKey(); if(!key) throw new Error('Manca la chiave API: inseriscila in Impostazioni → Assistente AI.');
+  if(c.provider!=='anthropic') throw new Error('Fornitore non supportato.');
+  let r,j;
+  try{ r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:aiModel(),max_tokens:2048,system:aiSystem(),tools:AI_TOOLS,messages:msgs})}) }
+  catch(e){ throw new Error('Connessione assente o servizio non raggiungibile.') }
+  try{ j=await r.json() }catch(e){ j=null }
+  if(!r.ok){ const m=(j&&j.error&&j.error.message)||'';
+    if(r.status===401) throw new Error('Chiave API non valida.');
+    if(/credit/i.test(m)) throw new Error('Credito API esaurito: ricaricalo sulla console del fornitore.');
+    if(r.status===429) throw new Error('Troppe richieste ravvicinate: riprova tra poco.');
+    if(r.status===529||/overload/i.test(m)) throw new Error('Il servizio è momentaneamente sovraccarico: riprova tra poco.');
+    throw new Error('Errore '+r.status+(m?': '+m:'')) }
+  const u=aiUsage(); u.in+=j.usage?.input_tokens||0; u.out+=j.usage?.output_tokens||0; u.n++; lsSet('reeflog.aiusage',JSON.stringify(u));
+  return j;
+}
+function aiTrim(msgs){ // mantiene la conversazione entro un limite, partendo sempre da un messaggio utente "pulito"
+  let m=msgs.slice(-30); while(m.length&&!(m[0].role==='user'&&Array.isArray(m[0].content)&&!m[0].content.some(b=>b.type==='tool_result'))) m.shift(); return m;
+}
+async function aiSend(){
+  const text=(AI.draft||'').trim(); if(AI.busy||(!text&&!AI.pendingImg)) return;
+  const content=[]; if(AI.pendingImg) content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:AI.pendingImg.data}});
+  content.push({type:'text',text:text||'Analizza questa foto della vasca.'});
+  AI.msgs.push({role:'user',content,_img:AI.pendingImg?AI.pendingImg.thumb:null}); AI.pendingImg=null; AI.draft=''; AI.error=''; AI.busy=true; render();
+  try{
+    for(let step=0;step<8;step++){
+      const res=await aiCall(aiTrim(AI.msgs).map(m=>({role:m.role,content:m.content})));
+      AI.msgs.push({role:'assistant',content:res.content}); render();
+      if(res.stop_reason!=='tool_use') break;
+      const results=[];
+      for(const b of res.content.filter(b=>b.type==='tool_use')){
+        let out;
+        if(AI_ACTIONS.has(b.name)){
+          const ok=await new Promise(resolve=>{ AI.confirm={name:b.name,input:b.input,resolve}; render() });
+          AI.confirm=null; AI.dec[b.id]=ok?1:0; render();
+          out= ok? await aiDoAction(b.name,b.input) : 'L\'utente non ha confermato: azione annullata.';
+        }else{ try{ out=aiRead(b.name,b.input||{}) }catch(e){ out='Errore nella lettura dei dati.' } }
+        results.push({type:'tool_result',tool_use_id:b.id,content:typeof out==='string'?out:JSON.stringify(out)});
+      }
+      AI.msgs.push({role:'user',content:results});
+    }
+  }catch(e){ AI.error=e.message||String(e); const last=AI.msgs[AI.msgs.length-1]; if(last&&last.role==='assistant'&&Array.isArray(last.content)&&last.content.some(b=>b.type==='tool_use')) AI.msgs.pop(); if(AI.msgs.length&&AI.msgs[AI.msgs.length-1].role==='user'&&!AI.msgs[AI.msgs.length-1].content.some(b=>b.type==='tool_result')){ const u=AI.msgs.pop(); AI.draft=u.content.filter(b=>b.type==='text').map(b=>b.text).join('\n') } }
+  AI.busy=false; aiSave(); render();
+}
+function mdLite(t){ // markdown essenziale → HTML sicuro
+  const lines=esc(t).split('\n'); let h='', inUl=false;
+  for(let l of lines){ l=l.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/(^|\s)\*(\S[^*]*?)\*(?=\s|$|[.,;:!?])/g,'$1<i>$2</i>');
+    const li=/^\s*(?:[-•*]|\d+[.)])\s+(.*)/.exec(l);
+    if(li){ if(!inUl){ h+='<ul>'; inUl=true } h+=`<li>${li[1]}</li>`; continue }
+    if(inUl){ h+='</ul>'; inUl=false }
+    const hd=/^#{1,4}\s+(.*)/.exec(l); if(hd){ h+=`<p><b>${hd[1]}</b></p>`; continue }
+    if(l.trim()) h+=`<p>${l}</p>` }
+  return h+(inUl?'</ul>':'');
+}
+const TOOL_LABEL={get_tests:'test',get_consumption:'consumi',get_dosing_history:'storico dosi',get_events:'diario',get_tasks:'scadenze',get_livestock:'animali'};
+function vAI(){
+  if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
+    <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
+    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li></ul>
+    <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
+  let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
+  if(!aiKey()) h+=`<div class="banner">Inserisci la chiave API in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
+  h+=`<div id="aiLog">`;
+  if(!AI.msgs.length) h+=`<div class="card small"><b>Cosa posso chiederti?</b><div class="chips" style="margin-top:8px">${['Come sta andando la mia vasca?','Analizza i consumi della triade','Perché il KH scende?','Cosa devo controllare questa settimana?'].map(q=>`<button class="chip" data-aiq="${esc(q)}">${q}</button>`).join('')}</div></div>`;
+  for(const m of AI.msgs){
+    if(!Array.isArray(m.content)) continue;
+    if(m.role==='user'){ if(m.content.some(b=>b.type==='tool_result')) continue;
+      const t=m.content.filter(b=>b.type==='text').map(b=>b.text).join('\n'); const img=m._img||(m.content.some(b=>b.type==='image')||/\[foto allegata\]/.test(t)?'ph':null);
+      h+=`<div class="bub me">${m._img?`<img src="${m._img}" style="max-width:140px;border-radius:8px;display:block;margin-bottom:6px">`:img?'<div class="small mut">📷 foto allegata</div>':''}${esc(t.replace('[foto allegata]','').trim())}</div>`; continue }
+    for(const b of m.content){
+      if(b.type==='text'&&b.text.trim()) h+=`<div class="bub ai">${mdLite(b.text)}</div>`;
+      else if(b.type==='tool_use'&&!AI_ACTIONS.has(b.name)) h+=`<div class="tchip">🔎 consultato: ${TOOL_LABEL[b.name]||b.name}</div>`;
+      else if(b.type==='tool_use'){ const lbl=({add_note:'nota',add_task:'scadenza',set_dose:'nuova dose',add_test:'test'})[b.name], d=AI.dec[b.id]; h+=`<div class="tchip">${d===1?'✅ confermata':d===0?'❌ annullata':'✋ proposta'}: ${lbl}</div>` }
+    }
+  }
+  if(AI.confirm) h+=`<div class="card" style="border-color:var(--warn)"><div class="small" style="margin-bottom:8px"><b>L'assistente propone di:</b><br>${aiActionText(AI.confirm.name,AI.confirm.input||{})}</div><div class="row"><button class="btn sm" id="aiYes">Conferma</button><button class="btn sm sec" id="aiNo">Annulla</button></div></div>`;
+  if(AI.busy&&!AI.confirm) h+=`<div class="bub ai mut">Sto analizzando…</div>`;
+  if(AI.error) h+=`<div class="banner" style="background:#3a1717;border-color:#5a2323;color:#ffb4b4">${esc(AI.error)}</div>`;
+  h+=`</div><div class="card" style="position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));padding:10px">
+    ${AI.pendingImg?`<div class="row" style="margin-bottom:8px;flex-wrap:nowrap"><img src="${AI.pendingImg.thumb}" style="width:54px;height:54px;object-fit:cover;border-radius:8px"><span class="small mut" style="flex:1">${esc(AI.pendingImg.label||'Foto allegata')}</span><button class="btn sm sec" id="aiImgX">✕</button></div>`:''}
+    <div class="row" style="flex-wrap:nowrap;align-items:flex-end"><button class="btn sec" id="aiAttach" title="Allega foto" style="padding:10px 12px">📷</button><textarea id="aiIn" rows="1" placeholder="Chiedi qualcosa sulla tua vasca…" style="min-height:44px;max-height:120px">${esc(AI.draft)}</textarea><button class="btn" id="aiSend" ${AI.busy?'disabled':''}>➤</button></div>
+    <div class="small mut" style="margin-top:6px">Le risposte dell'AI possono contenere errori: verifica prima di intervenire sulla vasca.</div></div>`;
+  return h;
+}
+async function blobToAiImg(blob,label){
+  const url=URL.createObjectURL(blob); try{ const img=await loadImg(url); const b=await resizeTo(img,1024,0.8); const thumb=await resizeTo(img,200,0.7,'url');
+    const data=await new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(String(fr.result).split(',')[1]); fr.readAsDataURL(b) }); return {data,thumb,label} } finally{ URL.revokeObjectURL(url) }
+}
+function aiAsk(prompt,img){ AI.draft=prompt; if(img) AI.pendingImg=img; go('ai') }
+function bindAI(){
+  const app=document.getElementById('app');
+  app.querySelectorAll('[data-aiq]').forEach(b=>b.onclick=()=>{ AI.draft=b.dataset.aiq; aiSend() });
+  app.querySelectorAll('[data-aiask]').forEach(b=>b.onclick=()=>aiAsk(b.dataset.aiask));
+  const inp=document.getElementById('aiIn'); if(inp){ inp.oninput=()=>{ AI.draft=inp.value; inp.style.height='auto'; inp.style.height=Math.min(120,inp.scrollHeight)+'px' };
+    inp.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!('ontouchstart' in window)){ e.preventDefault(); aiSend() } } }
+  const sd=document.getElementById('aiSend'); if(sd) sd.onclick=()=>{ if(inp) AI.draft=inp.value; aiSend() };
+  const nw=document.getElementById('aiNew'); if(nw) nw.onclick=()=>{ if(AI.busy) return; AI.msgs=[]; AI.dec={}; AI.error=''; aiSave(); render() };
+  const at=document.getElementById('aiAttach'); if(at) at.onclick=()=>document.getElementById('aiPhotoIn').click();
+  const ix=document.getElementById('aiImgX'); if(ix) ix.onclick=()=>{ AI.pendingImg=null; render() };
+  const y=document.getElementById('aiYes'), n=document.getElementById('aiNo');
+  if(y) y.onclick=()=>AI.confirm&&AI.confirm.resolve(true); if(n) n.onclick=()=>AI.confirm&&AI.confirm.resolve(false);
+  if(view==='ai'){ const log=document.getElementById('aiLog'); if(log) setTimeout(()=>window.scrollTo(0,document.body.scrollHeight),30) }
+  // impostazioni sviluppatore
+  const dv=document.getElementById('verTap'); if(dv) dv.onclick=()=>{ dv._n=(dv._n||0)+1; if(dv._n>=7&&!devMode()){ lsSet('reeflog.dev','1'); toast('Modalità sviluppatore attivata'); render() } else if(dv._n>=3&&dv._n<7&&!devMode()) toast(`Ancora ${7-dv._n} tocchi`) };
+  const pr=document.getElementById('aiPro'); if(pr) pr.onchange=()=>{ lsSet('reeflog.pro',pr.checked?'1':null); toast(pr.checked?'Pro attivo (sviluppatore)':'Pro disattivato'); render() };
+  const ky=document.getElementById('aiKeySave'); if(ky) ky.onclick=()=>{ const v=document.getElementById('aiKeyIn').value.trim(); lsSet('reeflog.aikey',v||null); const mdl=document.getElementById('aiModelIn').value.trim(); lsSet('reeflog.aicfg',JSON.stringify(Object.assign(aiCfg(),{model:mdl}))); toast(v?'Chiave salvata su questo dispositivo':'Chiave rimossa'); render() };
+  const kt=document.getElementById('aiKeyTest'); if(kt) kt.onclick=async()=>{ kt.disabled=true; kt.textContent='Verifica…'; try{ const key=document.getElementById('aiKeyIn').value.trim()||aiKey(); if(key&&key!==aiKey()) lsSet('reeflog.aikey',key); await aiCall([{role:'user',content:[{type:'text',text:'Rispondi solo: OK'}]}]); toast('Connessione riuscita ✓') }catch(e){ toast(e.message) } render() };
+  const ur=document.getElementById('aiUsageReset'); if(ur) ur.onclick=()=>{ lsSet('reeflog.aiusage',null); render() };
+  const dx=document.getElementById('devOff'); if(dx) dx.onclick=()=>{ lsSet('reeflog.dev',null); lsSet('reeflog.pro',null); toast('Modalità sviluppatore disattivata'); render() };
+}
+function vAISettings(){
+  if(!devMode()&&!isPro()) return '';
+  const u=aiUsage(), k=aiKey();
+  return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
+    ${devMode()?`<label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Pro attivo</b><br><span class="small mut">Modalità sviluppatore: in futuro lo attiverà l'abbonamento</span></span><input type="checkbox" id="aiPro" ${isPro()?'checked':''} style="width:22px;height:22px"></label><hr>`:''}
+    <div class="f"><label>Fornitore</label><select disabled><option>${AI_PROVIDERS[aiCfg().provider].name}</option></select></div>
+    <div class="f" style="margin-top:8px"><label>Modello</label><input id="aiModelIn" value="${esc(aiCfg().model||'')}" placeholder="${AI_PROVIDERS[aiCfg().provider].model}"></div>
+    <div class="f" style="margin-top:8px"><label>Chiave API</label><input id="aiKeyIn" type="password" autocomplete="off" placeholder="${k?'••••••••'+esc(k.slice(-4)):'sk-ant-…'}"></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
+    <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>
+    <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:3})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
+    ${devMode()?'<hr><button class="btn sm sec" id="devOff">Esci dalla modalità sviluppatore</button>':''}</div>`;
+}
 
 /* ---------- Guida ---------- */
 const GUIDE=[
@@ -536,6 +763,9 @@ const GUIDE=[
   <li><b>Importa JSON</b> ripristina il file. I dati già presenti vengono aggiornati, senza doppioni;</li>
   <li><b>Copia test in CSV</b> serve per usare i test in un foglio di calcolo.</li></ul>
   <p><b>Per cambiare telefono</b>: esporta dal vecchio e importa nel nuovo. <b>Non disinstallare l'app</b> senza un backup: la disinstallazione cancella i dati. Gli aggiornamenti dell'app invece li conservano.</p>`},
+ {id:'ai',i:'✨',t:'Assistente AI (Pro)',b:`<p>L'assistente è una chat che <b>conosce la tua vasca</b>: legge test, consumi, dosi, cambi d'acqua, scadenze e animali, e risponde sui tuoi numeri. Lo apri da <b>Menu → Assistente AI</b>, dal riquadro del dosaggio in Home o da una foto aperta (<b>✨ Analizza</b>).</p>
+  <ul><li>Domande libere, per esempio "Perché il KH scende?" o "Posso inserire un nuovo corallo?".</li><li><b>Foto</b>: allega una foto con 📷 per un parere su alghe, cyano, dinoflagellati o coralli. Una foto non basta per una diagnosi certa.</li><li><b>Azioni</b>: l'assistente può proporre di aggiungere una nota, una scadenza, un test letto da una foto o una nuova dose. Non fa nulla senza il tuo <b>Conferma</b>.</li></ul>
+  <p>Le risposte possono contenere errori: verifica sempre prima di intervenire. È una funzione del piano Pro; quando la usi, i dati della vasca vengono inviati al fornitore dell'AI solo per elaborare la risposta.</p>`},
  {id:'faq',i:'❓',t:'Domande frequenti',b:`<p><b>Il consumo mostra "–".</b> Servono almeno due test dello stesso parametro e la concentrazione del prodotto inserita in Impostazioni.</p>
   <p><b>Il consumo sembra sbagliato.</b> Controlla il volume netto, di aver registrato ogni cambio di dose e i cambi d'acqua, e i dati del prodotto. I test fatti a poche ore di distanza amplificano gli errori del kit: meglio almeno un giorno di distanza.</p>
   <p><b>Ho sbagliato un test.</b> Parametri → Storico → ✎.</p>
@@ -543,7 +773,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -819,7 +1049,7 @@ window.addEventListener('online',()=>scheduleSync(300));
 window.addEventListener('offline',updHdr);
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleSync(300) });
 setInterval(()=>{ if(document.visibilityState==='visible') sync() },60000);
-function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`  <div class="card"><h2>Backup</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
+function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`<div class="small mut" id="verTap" style="text-align:center;margin:4px 0 8px;user-select:none">Reef Log versione ${APP_VERSION}${devMode()?' · sviluppatore':''}</div>  <div class="card"><h2>Backup</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
   ${allPhotoMetas().length?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="bkPhotos" checked style="width:auto;margin-right:6px">Includi le ${allPhotoMetas().length} foto nel backup (file più grande)</label>`:''}
   <textarea id="expBox" class="hide" style="margin-top:8px;min-height:120px" readonly></textarea>
   <div class="small mut" style="margin-top:6px">${S.tests.length} test · ${S.doses.length} variazioni dose · ${S.events.length} voci diario · archivio ${S.mode==='db'?'sul tuo account (privato)':'locale'}.</div></div>`;
@@ -927,7 +1157,7 @@ function vHome(){
     if(l.v<lo){ const ml=(mid-l.v)*vol()/eff; corr+=`<div>• ${P[p].n}: ${fmt(l.v,P[p].d)} sotto target → circa <b>${fmt(ml,0)} ml${isAIO()?' di AIO':''}</b> una tantum per arrivare a ${fmt(mid,P[p].d)}${p==='kh'&&(mid-l.v)>1?` <span class="mut">(dividi in ${Math.ceil(mid-l.v)} giorni: max ~1 dKH/giorno)</span>`:''}</div>` } }
   if(corr) h+=`<hr><div class="small"><div class="mut" style="margin-bottom:4px">Correzioni suggerite</div>${corr}</div>`;
   if(dmode()==='balling'&&(!effPerMl('mg')||!effPerMl('ca')||!effPerMl('kh'))) h+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
-  h+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div></div>`;
+  h+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div>${isPro()?'<button class="btn sm" style="margin-top:10px" data-aiask="Analizza il mio dosaggio e i consumi della triade: sto dosando correttamente? Cosa dovrei cambiare?">✨ Chiedi all\'assistente</button>':''}</div>`;
   return h;
 }
 
@@ -1136,7 +1366,7 @@ function vDiario(){
 
 function vSet(){
   const s=S.settings;
-  let h=vNotif()+`<form id="fSet"><div class="card"><h2>Vasca</h2>
+  let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Vasca</h2>
     <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" value="${esc(String(s.volume).replace('.',','))}"></div></div>
     <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
   <div class="card"><h2>Avvio e manutenzione</h2>
@@ -1258,7 +1488,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -1273,6 +1503,7 @@ const VIEWS={
   impostazioni:()=>backBar()+vSet(),
   sync:()=>backBar()+vSyncPage(),
   guida:()=>backBar()+vGuida(),
+  ai:vAI,
 };
 function parseHash(){
   let hsh=(location.hash||'').slice(1); if(ALIAS[hsh]) hsh=ALIAS[hsh];
@@ -1304,6 +1535,7 @@ function vMenu(){
     ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
+    ['ai','✨','Assistente AI',isPro()?(aiKey()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
@@ -1376,12 +1608,11 @@ function bind(){
   const ap=document.getElementById('addPhoto')||document.getElementById('homeAddPhoto'); if(ap) ap.onclick=()=>document.getElementById('photoIn').click();
   const hp=document.getElementById('homeAddPhoto'); if(hp) hp.onclick=()=>document.getElementById('photoIn').click();
   const cb=document.getElementById('cmpBtn'); if(cb) cb.onclick=()=>{ photoSel=photoSel?null:[]; render() };
-  const cf=document.getElementById('cmpFirst'); if(cf) cf.onclick=()=>openCompare(S.photos[S.photos.length-1].id,S.photos[0].id);
   app.querySelectorAll('[data-ph]').forEach(b=>b.onclick=()=>{ const id=b.dataset.ph;
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
@@ -1495,6 +1726,7 @@ document.getElementById('lvPhotoIn').onchange=async e=>{ const f=e.target.files[
     const keep=lvFormSnapshot(); lvPendingPhoto={blob,thumb}; render(); lvFormRestore(keep) }catch(err){ toast('Foto non leggibile') } };
 function lvFormSnapshot(){ const f=document.getElementById('fLv'); return f?formVals(f):null }
 function lvFormRestore(o){ const f=document.getElementById('fLv'); if(!f||!o) return; for(const [k,v] of Object.entries(o)){ const el=f.elements[k]; if(el) el.value=v } const sel=document.getElementById('lvSt'); if(sel) document.getElementById('lvEndF').classList.toggle('hide',sel.value==='alive') }
+document.getElementById('aiPhotoIn').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return; try{ AI.pendingImg=await blobToAiImg(f,'Foto allegata'); render() }catch(err){ toast('Foto non leggibile') } };
 document.getElementById('photoIn').onchange=e=>{ const fs=[...e.target.files]; e.target.value=''; if(fs.length) addPhotos(fs) };
 window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').classList.contains('hide')){ closeOv(); render() } });
 // Tasto indietro di Android (app nativa): chiude finestre, torna alla sezione precedente, poi esce
