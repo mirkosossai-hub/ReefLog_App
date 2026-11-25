@@ -871,7 +871,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.8.8';
+const APP_VERSION='1.9.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1242,6 +1242,8 @@ const GUIDE=[
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro;</li><li><b>Altro</b> (carbone, resine, calze filtranti…): scegli l'unità di misura (pz, ml, L, g, kg, mg) e, se vuoi, collega una manutenzione con la quantità usata ogni volta. Ad esempio carbone, 100 ml a ogni «Cambio carbone» ogni 30 giorni: quando segni il cambio come fatto, la scorta scende da sola. Se non lo colleghi, usa <b>Ho usato…</b> per scalare a mano.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
+ {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>In fondo alla Home trovi <b>⚙ Personalizza la Home</b>. Lì scegli quali riquadri vedere (foto della vasca, avvio, report AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
+  <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Ogni vasca ha la sua Home.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
  {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere Reef Log sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>Reef Log</b> e trascinalo dove vuoi.</p>
@@ -1607,6 +1609,42 @@ function render(){
   clearTimeout(render._w); render._w=setTimeout(widgetPush,1500);
 }
 
+/* ---------- Home personalizzabile (ogni vasca la sua) ---------- */
+const HOME_BLOCKS=[['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','✨','Report AI','solo Pro, se attivo'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
+function homeCfg(){ return Object.assign({order:[],hide:{},photo:null},S.settings.home||{}) }
+function homeOrder(){ const o=homeCfg().order.filter(id=>HOME_BLOCKS.some(b=>b[0]===id)); for(const [id] of HOME_BLOCKS) if(!o.includes(id)) o.push(id); return o }
+function homeHidden(id){ const c=homeCfg(); if(id==='photo') return !c.photo||!S.photos.some(p=>p.id===c.photo)||c.hide.photo; return !!c.hide[id] }
+async function homeSave(ch){ S.settings.home=Object.assign(homeCfg(),ch); await saveSettings(); render() }
+function tankAgeTxt(){ const sd=S.settings.startDate; if(!sd) return ''; const st=day0(new Date(sd+'T00:00').getTime()); if(!isFinite(st)) return ''; const d=Math.floor((day0(Date.now())-st)/DAY)+1; return d>=1?`in vasca da ${d} ${d===1?'giorno':'giorni'}`:'' }
+function homePhoto(){ const c=homeCfg(), p=S.photos.find(x=>x.id===c.photo); if(!p) return '';
+  const age=tankAgeTxt();
+  return `<div class="card" style="padding:0;overflow:hidden"><img id="homePhoto" data-pid="${p.id}" src="${p.thumb}" alt="" style="width:100%;max-height:260px;object-fit:cover;display:block;cursor:pointer" data-go="vasca-foto">
+    <div style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b>${esc(tankName())}</b><span class="small mut">${age||fdate(p.ts,true)}</span></div></div>` }
+let _homeImg=null;
+async function homePhotoLoad(){ const el=document.getElementById('homePhoto'); if(!el) return; const id=el.dataset.pid;
+  if(_homeImg&&_homeImg.id===id){ el.src=_homeImg.url; return }
+  try{ const r=await getPhoto(id); if(r&&r.blob&&document.getElementById('homePhoto')){ if(_homeImg) URL.revokeObjectURL(_homeImg.url); _homeImg={id,url:URL.createObjectURL(r.blob)}; document.getElementById('homePhoto').src=_homeImg.url } }catch(e){} }
+function vHomeCfg(){
+  const c=homeCfg(), ord=homeOrder();
+  let h=`<div class="back"><button data-go="home">‹ Home</button><h1>Personalizza la Home</h1></div>
+  <div class="card"><div class="small mut" style="margin-bottom:8px">Scegli cosa vedere nella Home di <b>${esc(tankName())}</b> e in che ordine. Le modifiche si salvano subito.</div><div class="list">`;
+  ord.forEach((id,i)=>{ const b=HOME_BLOCKS.find(x=>x[0]===id); const on=!c.hide[id];
+    h+=`<div class="it"><div class="body"><label style="display:flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" data-hshow="${id}" ${on?'checked':''} style="width:auto"><span><b>${b[1]} ${b[2]}</b>${b[3]?`<div class="small mut">${b[3]}</div>`:''}</span></label></div>
+      <div class="acts"><button class="btn sm sec" data-hmv="${id}" data-d="-1" ${i===0?'disabled':''}>↑</button><button class="btn sm sec" data-hmv="${id}" data-d="1" ${i===ord.length-1?'disabled':''}>↓</button></div></div>` });
+  h+=`</div></div><div class="card"><h2>Foto della vasca</h2>`;
+  if(!S.photos.length) h+=`<div class="small">Non hai ancora foto. Aggiungile in <a href="#vasca-foto">Vasca → Foto</a> e poi scegline una qui.</div>`;
+  else{ h+=`<div class="small mut" style="margin-bottom:8px">Tocca la foto da mostrare in cima alla Home.</div><div class="grid" style="grid-template-columns:repeat(3,1fr)">`;
+    for(const p of [...S.photos].sort((a,b)=>b.ts-a.ts)) h+=`<button type="button" data-hph="${p.id}" style="padding:0;border:3px solid ${c.photo===p.id?'var(--acc)':'transparent'};border-radius:10px;overflow:hidden;background:none;aspect-ratio:1"><img src="${p.thumb}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"></button>`;
+    h+=`</div>${c.photo?'<button class="btn sm sec" data-hph="" style="margin-top:8px">Nessuna foto</button>':''}`; }
+  h+=`</div><div class="card"><div class="small">I parametri di <b>Ultimi valori</b> si scelgono in <a href="#impostazioni">Impostazioni</a>, con la spunta accanto a ogni parametro, nella sezione dei range.</div></div>`;
+  return h;
+}
+function bindHomeCfg(){
+  document.querySelectorAll('[data-hshow]').forEach(x=>x.onchange=()=>{ const c=homeCfg(); homeSave({hide:Object.assign({},c.hide,{[x.dataset.hshow]:!x.checked})}) });
+  document.querySelectorAll('[data-hmv]').forEach(x=>x.onclick=()=>{ const o=homeOrder(), i=o.indexOf(x.dataset.hmv), j=i+(+x.dataset.d); if(j<0||j>=o.length) return; [o[i],o[j]]=[o[j],o[i]]; homeSave({order:o}) });
+  document.querySelectorAll('[data-hph]').forEach(x=>x.onclick=()=>{ const id=x.dataset.hph||null; const c=homeCfg(); homeSave({photo:id,hide:Object.assign({},c.hide,{photo:false})}); toast(id?'Foto impostata nella Home':'Foto tolta dalla Home') });
+  homePhotoLoad();
+}
 function vHome(){
   const lt = S.tests.length? Math.max(...S.tests.map(t=>t.ts)) : null;
   let h='';
@@ -1616,53 +1654,60 @@ function vHome(){
       <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" data-go="guida-primi">📖 Guida</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
   }
+  const B={}; let bs='';
   const si=startInfo();
   if(si && si.show){
     const done=si.done, fixed=si.mode==='fixed';
     const nh=lastVal('nh4'), no2=lastVal('no2'), no3=lastVal('no3');
-    h+=`<div class="card"><h2>${fixed?'Avvio vasca':'Maturazione'} <span class="tag">${done?'completat'+(fixed?'o':'a'):fixed?'settimana '+si.week+' di '+si.weeks:'settimana '+si.week}</span></h2>
+    bs+=`<div class="card"><h2>${fixed?'Avvio vasca':'Maturazione'} <span class="tag">${done?'completat'+(fixed?'o':'a'):fixed?'settimana '+si.week+' di '+si.weeks:'settimana '+si.week}</span></h2>
       <div class="big" style="font-size:20px">${done?(fixed?`Avvio completato il ${fdate(si.end,true)}`:`Ciclo completato il ${fdate(si.end,true)}`):fixed?`Giorno ${si.day} di ${si.tot}`:`Giorno ${si.day}`}</div>
       ${fixed?`<div style="height:8px;background:#0a1a24;border-radius:6px;margin:8px 0;overflow:hidden"><div style="height:100%;width:${Math.min(100,100*si.day/si.tot)}%;background:var(--acc)"></div></div>`:'<div style="height:6px"></div>'}
       <div class="small mut">Partita il ${fdate(si.st,true)}${fixed?(done?'':` · mancano ${si.tot-si.day+1} giorni`):(done?` · durata ${Math.round((day0(si.end)-si.st)/DAY)+1} giorni`:' · si conclude quando NH₄ e NO₂ sono a zero in due test di fila')}</div>
       <div class="row small" style="margin-top:8px;gap:14px">${[['NH₄',nh,'nh4'],['NO₂',no2,'no2'],['NO₃',no3,'no3']].map(([n,l,p])=>`<span>${n}: <b>${l?fmt(l.v,P[p].d):'–'}</b>${l?` <span class="mut">(${fdate(l.ts)})</span>`:''}</span>`).join('')}</div>
       <canvas id="cStart" height="140" style="margin-top:8px"></canvas></div>`;
   }
-  h+=homeReport();
+  B.start=bs; B.report=homeReport(); let bt='';
   const soon=S.tasks.filter(t=>dueDiff(t)<=2).sort((a,b)=>nextDue(a)-nextDue(b)); const sal=stockAlerts();
   const ltds=lastEv('tds'); const tdsBad=ltds&&num(ltds.tds)>=(num(S.settings.tdsMax)||3);
   if(soon.length||tdsBad||sal.length){
-    h+=`<div class="card"><h2>Da fare</h2><div class="list">`;
-    for(const t of soon) h+=`<div class="it"><div class="body"><b>${esc(t.name)}</b>${t.bacter?`<div class="small mut">${bacterTxt()}</div>`:''}</div><div>${dueBadge(t)}</div></div>`;
-    if(tdsBad) h+=`<div class="it"><div class="body"><b style="color:var(--bad)">Osmosi: TDS ${fmt(num(ltds.tds),0)} ppm</b><div class="small mut">Raggiunta la soglia: cambia le resine</div></div></div>`;
-    for(const {it,i} of sal) h+=`<div class="it" data-go="scorte" style="cursor:pointer"><div class="body"><b>📦 ${esc(it.name)}</b><div class="small mut">${i.days!=null&&i.days<7?`finisce tra circa ${fmt(Math.max(0,i.days),0)} giorni`:''}${i.days!=null&&i.days<7&&i.expDays!=null&&i.expDays<15?' · ':''}${i.expDays!=null&&i.expDays<15?(i.expDays<0?'scaduto':`scade tra ${i.expDays} giorni`):''}</div></div></div>`;
-    h+=`</div><button class="btn sm sec" data-go="manut" style="margin-top:8px">Apri manutenzione</button></div>`;
+    bt+=`<div class="card"><h2>Da fare</h2><div class="list">`;
+    for(const t of soon) bt+=`<div class="it"><div class="body"><b>${esc(t.name)}</b>${t.bacter?`<div class="small mut">${bacterTxt()}</div>`:''}</div><div>${dueBadge(t)}</div></div>`;
+    if(tdsBad) bt+=`<div class="it"><div class="body"><b style="color:var(--bad)">Osmosi: TDS ${fmt(num(ltds.tds),0)} ppm</b><div class="small mut">Raggiunta la soglia: cambia le resine</div></div></div>`;
+    for(const {it,i} of sal) bt+=`<div class="it" data-go="scorte" style="cursor:pointer"><div class="body"><b>📦 ${esc(it.name)}</b><div class="small mut">${i.days!=null&&i.days<7?`finisce tra circa ${fmt(Math.max(0,i.days),0)} giorni`:''}${i.days!=null&&i.days<7&&i.expDays!=null&&i.expDays<15?' · ':''}${i.expDays!=null&&i.expDays<15?(i.expDays<0?'scaduto':`scade tra ${i.expDays} giorni`):''}</div></div></div>`;
+    bt+=`</div><button class="btn sm sec" data-go="manut" style="margin-top:8px">Apri manutenzione</button></div>`;
   }
-  h+=`<div class="card"><h2>Ultimi valori ${lt?`<span class="tag">ultimo test ${Math.floor((Date.now()-lt)/DAY)===0?'oggi':Math.floor((Date.now()-lt)/DAY)+' gg fa'}</span>`:''}</h2>`;
+  B.todo=bt; let bv='';
+  bv+=`<div class="card"><h2>Ultimi valori ${lt?`<span class="tag">ultimo test ${Math.floor((Date.now()-lt)/DAY)===0?'oggi':Math.floor((Date.now()-lt)/DAY)+' gg fa'}</span>`:''}</h2>`;
   const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]);
   { const si0=startInfo(); if(si0&&!si0.done) for(const p of ['nh4','no2','no3']) if(!ps.includes(p)&&lastVal(p)) ps.push(p) } // durante l'avvio mostra sempre ammoniaca, nitriti e nitrati misurati
-  if(!S.tests.length) h+=`<p class="mut">Nessun test registrato. <button class="btn sm" data-go="param-nuovo">Inserisci il primo test</button></p>`;
+  if(!S.tests.length) bv+=`<p class="mut">Nessun test registrato. <button class="btn sm" data-go="param-nuovo">Inserisci il primo test</button></p>`;
   else{
-    h+=`<div class="grid">`;
+    bv+=`<div class="grid">`;
     for(const p of ps){ const l=lastVal(p); if(!l) continue;
       const dd = l.prev!=null? l.v-l.prev : null;
-      h+=`<div class="tile ${status(p,l.v)}" data-graf="${p}"><div class="k">${P[p].n}</div><div class="v">${fmt(l.v,P[p].d)} <small>${P[p].u}</small></div><div class="d">${fdate(l.ts)}${dd!=null?` · ${dd>0?'+':''}${fmt(dd,P[p].d)}`:''}</div></div>` }
-    h+=`</div>`;
+      bv+=`<div class="tile ${status(p,l.v)}" data-graf="${p}"><div class="k">${P[p].n}</div><div class="v">${fmt(l.v,P[p].d)} <small>${P[p].u}</small></div><div class="d">${fdate(l.ts)}${dd!=null?` · ${dd>0?'+':''}${fmt(dd,P[p].d)}`:''}</div></div>` }
+    bv+=`</div>`;
   }
-  h+=`</div>`;
+  bv+=`</div>`; B.values=bv;
   // Triade
-  h+=homeDosing();
+  let bd=homeDosing();
+  if(volSet()){
   const cCa=avgCons('ca'), cKh=avgCons('kh');
   if(cCa!=null&&cKh!=null&&cKh>0.05){
     const ratio=cCa/cKh;
-    h+=`<hr><div class="small">Rapporto consumi Ca/KH: <b>${fmt(ratio,1)}</b> ppm per dKH <span class="mut">(teorico ≈ 7,1 se il consumo è solo da calcificazione)</span>${ratio<5||ratio>9.5?' <span style="color:var(--warn)">· scostamento ampio: verifica test o precipitazioni</span>':''}</div>`;
+    bd+=`<hr><div class="small">Rapporto consumi Ca/KH: <b>${fmt(ratio,1)}</b> ppm per dKH <span class="mut">(teorico ≈ 7,1 se il consumo è solo da calcificazione)</span>${ratio<5||ratio>9.5?' <span style="color:var(--warn)">· scostamento ampio: verifica test o precipitazioni</span>':''}</div>`;
   }
   // correzioni
   let corr='';
   for(const p of (dmode()==='balling'?TRI:[])){ const l=lastVal(p), eff=effPerMl(p); if(!l||!eff) continue; const [lo,hi]=tgt(p); const mid=(lo+hi)/2;
     if(l.v<lo){ const ml=(mid-l.v)*vol()/eff; corr+=`<div>• ${P[p].n}: ${fmt(l.v,P[p].d)} sotto target → circa <b>${fmt(ml,0)} ml${isAIO()?' di AIO':''}</b> una tantum per arrivare a ${fmt(mid,P[p].d)}${p==='kh'&&(mid-l.v)>1?` <span class="mut">(dividi in ${Math.ceil(mid-l.v)} giorni: max ~1 dKH/giorno)</span>`:''}</div>` } }
-  if(corr) h+=`<hr><div class="small"><div class="mut" style="margin-bottom:4px">Correzioni suggerite</div>${corr}</div>`;
-  if(dmode()==='balling'&&(!effPerMl('mg')||!effPerMl('ca')||!effPerMl('kh'))) h+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
-  h+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div>${isPro()?'<button class="btn sm" style="margin-top:10px" data-aiask="Analizza il mio dosaggio e i consumi della triade: sto dosando correttamente? Cosa dovrei cambiare?">✨ Chiedi all\'assistente</button>':''}</div>`;
+  if(corr) bd+=`<hr><div class="small"><div class="mut" style="margin-bottom:4px">Correzioni suggerite</div>${corr}</div>`;
+  if(dmode()==='balling'&&(!effPerMl('mg')||!effPerMl('ca')||!effPerMl('kh'))) bd+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
+  bd+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div>${isPro()?'<button class="btn sm" style="margin-top:10px" data-aiask="Analizza il mio dosaggio e i consumi della triade: sto dosando correttamente? Cosa dovrei cambiare?">✨ Chiedi all\'assistente</button>':''}</div>`;
+  }
+  B.dosing=bd; B.photo=homePhoto();
+  for(const id of homeOrder()) if(!homeHidden(id)) h+=B[id]||'';
+  h+=`<div style="text-align:center;margin:4px 0 14px"><button class="btn sm sec" data-go="homecfg">⚙ Personalizza la Home</button></div>`;
   return h;
 }
 
@@ -2009,7 +2054,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -2027,6 +2072,7 @@ const VIEWS={
   ai:vAI,
   scorte:()=>backBar()+vScorte(),
   pdf:()=>backBar()+vPDF(),
+  homecfg:vHomeCfg,
   attrezzatura:()=>backBar()+vGear(),
   report:()=>backBar()+vReport(),
 };
@@ -2040,7 +2086,7 @@ function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
   if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
-  const tab= v==='home'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
+  const tab= v==='home'||v==='homecfg'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
 }
@@ -2163,7 +2209,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
