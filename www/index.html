@@ -871,7 +871,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.9.0';
+const APP_VERSION='1.9.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1618,7 +1618,7 @@ async function homeSave(ch){ S.settings.home=Object.assign(homeCfg(),ch); await 
 function tankAgeTxt(){ const sd=S.settings.startDate; if(!sd) return ''; const st=day0(new Date(sd+'T00:00').getTime()); if(!isFinite(st)) return ''; const d=Math.floor((day0(Date.now())-st)/DAY)+1; return d>=1?`in vasca da ${d} ${d===1?'giorno':'giorni'}`:'' }
 function homePhoto(){ const c=homeCfg(), p=S.photos.find(x=>x.id===c.photo); if(!p) return '';
   const age=tankAgeTxt();
-  return `<div class="card" style="padding:0;overflow:hidden"><img id="homePhoto" data-pid="${p.id}" src="${p.thumb}" alt="" style="width:100%;max-height:260px;object-fit:cover;display:block;cursor:pointer" data-go="vasca-foto">
+  return `<div class="card" style="padding:0;overflow:hidden"><div style="background:#05101a;line-height:0;text-align:center"><img id="homePhoto" data-pid="${p.id}" src="${p.thumb}" alt="" style="display:inline-block;max-width:100%;max-height:70vh;width:auto;height:auto;cursor:pointer" data-go="vasca-foto"></div>
     <div style="padding:10px 14px;display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b>${esc(tankName())}</b><span class="small mut">${age||fdate(p.ts,true)}</span></div></div>` }
 let _homeImg=null;
 async function homePhotoLoad(){ const el=document.getElementById('homePhoto'); if(!el) return; const id=el.dataset.pid;
