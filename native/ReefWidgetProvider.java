@@ -16,8 +16,8 @@ import org.json.JSONObject;
 public class ReefWidgetProvider extends AppWidgetProvider {
 
     static final String PREFS = "reefwidget";
-    static final int[] NAMES = { R.id.w_n1, R.id.w_n2, R.id.w_n3 };
-    static final int[] VALUES = { R.id.w_v1, R.id.w_v2, R.id.w_v3 };
+    static final int[] NAMES = { R.id.w_n1, R.id.w_n2, R.id.w_n3, R.id.w_n4, R.id.w_n5, R.id.w_n6, R.id.w_n7 };
+    static final int[] VALUES = { R.id.w_v1, R.id.w_v2, R.id.w_v3, R.id.w_v4, R.id.w_v5, R.id.w_v6, R.id.w_v7 };
 
     @Override
     public void onUpdate(Context ctx, AppWidgetManager manager, int[] ids) {
@@ -46,7 +46,7 @@ public class ReefWidgetProvider extends AppWidgetProvider {
             v.setViewVisibility(R.id.w_vals, View.VISIBLE);
             v.setViewVisibility(R.id.w_msg, View.GONE);
             JSONArray ps = d.optJSONArray("params");
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < NAMES.length; i++) {
                 JSONObject p = (ps != null && i < ps.length()) ? ps.optJSONObject(i) : null;
                 v.setTextViewText(NAMES[i], p == null ? "" : p.optString("n") + (p.optString("u").isEmpty() ? "" : " " + p.optString("u")));
                 v.setTextViewText(VALUES[i], p == null ? "–" : p.optString("v", "–"));

@@ -570,6 +570,7 @@ let pdfDays=90, _pdfBusy=false;
 function loadJsPDF(){ return window.jspdf?Promise.resolve():loadScript('jspdf.umd.min.js') }
 function chartImg(p,from,to){
   const pts=testsWith(p).filter(t=>t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); if(pts.length<2||!window.Chart) return null;
+  { const d0=Math.min(...pts.map(q=>q.x)), pad=Math.max(2*DAY,(to-d0)*0.06); from=Math.max(from,d0-pad); to=to+pad }
   const c=document.createElement('canvas'); c.width=900; c.height=300; const [lo,hi]=tgt(p);
   const ch=new Chart(c,{type:'line',data:{datasets:[{data:pts,borderColor:'#0e7c8c',backgroundColor:'#0e7c8c',pointRadius:3,borderWidth:2,tension:.2},{data:[{x:from,y:lo},{x:to,y:lo}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1},{data:[{x:from,y:hi},{x:to,y:hi}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1,fill:'-1',backgroundColor:'rgba(63,169,108,.08)'}]},
     options:{animation:false,responsive:false,devicePixelRatio:1,plugins:{legend:{display:false}},scales:{x:{type:'linear',min:from,max:to,ticks:{color:'#444',maxTicksLimit:6,callback:v=>new Date(v).toLocaleDateString('it-IT',{day:'2-digit',month:'short'})},grid:{color:'#e5e5e5'}},y:{ticks:{color:'#444'},grid:{color:'#e5e5e5'}}}}});
@@ -723,7 +724,8 @@ function widgetPush(){
   const C=CAP(); if(!C) return; const W=(C.Plugins&&C.Plugins.ReefWidget)||(C.registerPlugin&&C.registerPlugin('ReefWidget')); if(!W||!W.update) return;
   const now=Date.now(); const lt=S.tests.length?Math.max(...S.tests.map(t=>t.ts)):0;
   const tk=[...S.tasks].filter(t=>t.on!==false).map(t=>({n:t.name,ts:nextDue(t)})).sort((a,b)=>a.ts-b.ts)[0]||null;
-  const params=['kh','ca','mg'].map(p=>{ const l=lastVal(p); return {n:P[p].n==='Magnesio'?'Mg':P[p].n==='Calcio'?'Ca':'KH',v:l?fmt(l.v,P[p].d):'–',u:P[p].u,s:l?status(p,l.v).replace('s-',''):''} });
+  const WN={kh:'KH',ca:'Ca',mg:'Mg',po4:'PO₄',no3:'NO₃',no2:'NO₂',nh4:'NH₄'};
+  const params=['kh','ca','mg','po4','no3','no2','nh4'].map((p,i)=>{ const l=lastVal(p); return {n:WN[p],v:l?fmt(l.v,P[p].d):'–',u:i<3?P[p].u:'',s:l?status(p,l.v).replace('s-',''):''} });
   const d=JSON.stringify({pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'Reef Log',params,lastTest:lt,next:tk});
   if(d===_wLast) return; _wLast=d; W.update({data:d}).catch(()=>{});
 }
@@ -869,7 +871,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.8.4';
+const APP_VERSION='1.8.8';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1028,7 +1030,7 @@ const TOOL_LABEL={get_tests:'test',get_consumption:'consumi',get_dosing_history:
 function vAI(){
   if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
-    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li><li>Widget sulla schermata Home con KH, calcio, magnesio e prossima manutenzione</li>':''}</ul>
+    <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li><li>Widget sulla schermata Home con KH, calcio, magnesio, fosfati, nitrati, nitriti, ammoniaca e prossima manutenzione</li>':''}</ul>
     <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
 
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
@@ -1243,7 +1245,7 @@ const GUIDE=[
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
  {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere Reef Log sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>Reef Log</b> e trascinalo dove vuoi.</p>
-  <p>Il widget mostra gli ultimi KH, calcio e magnesio (verdi se nel range, gialli o rossi se no), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri Reef Log.</p>`},
+  <p>Il widget mostra gli ultimi valori di KH, calcio, magnesio, fosfati, nitrati, nitriti e ammoniaca (verdi se nel range, gialli o rossi se no; «–» se non li hai ancora misurati), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri Reef Log.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -1637,6 +1639,7 @@ function vHome(){
   }
   h+=`<div class="card"><h2>Ultimi valori ${lt?`<span class="tag">ultimo test ${Math.floor((Date.now()-lt)/DAY)===0?'oggi':Math.floor((Date.now()-lt)/DAY)+' gg fa'}</span>`:''}</h2>`;
   const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]);
+  { const si0=startInfo(); if(si0&&!si0.done) for(const p of ['nh4','no2','no3']) if(!ps.includes(p)&&lastVal(p)) ps.push(p) } // durante l'avvio mostra sempre ammoniaca, nitriti e nitrati misurati
   if(!S.tests.length) h+=`<p class="mut">Nessun test registrato. <button class="btn sm" data-go="param-nuovo">Inserisci il primo test</button></p>`;
   else{
     h+=`<div class="grid">`;
@@ -1929,14 +1932,22 @@ function vSet(){
 
 /* ---------- Grafici ---------- */
 const AX={ticks:{color:'#8aa7b6',font:{size:11}},grid:{color:'#1f415355'}};
+function chartDefaults(){ Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+  Chart.defaults.plugins.tooltip.callbacks.title=items=>{ const x=items&&items[0]&&items[0].parsed&&items[0].parsed.x; return x>1e11?fdate(x,true):(items[0]?.label||'') } }
+// serie diverse sullo stesso grafico: segni concentrici (anello, rombo, punto…), così valori uguali nello stesso giorno restano tutti visibili
+const MARKS=[{pointStyle:'circle',pointRadius:8.5,hollow:1},{pointStyle:'rectRot',pointRadius:5.5,hollow:1},{pointStyle:'circle',pointRadius:2.8},{pointStyle:'triangle',pointRadius:11,hollow:1},{pointStyle:'rect',pointRadius:13,hollow:1}];
+function markOf(i,c){ const m=MARKS[i%MARKS.length]; return {pointStyle:m.pointStyle,pointRadius:m.pointRadius,pointHoverRadius:m.pointRadius+2,pointBorderWidth:m.hollow?2.2:1,pointBackgroundColor:m.hollow?'transparent':c,pointBorderColor:c} }
+const LINEW=[4.5,2.8,1.4];
 function xTime(min,max){ return {type:'linear',min,max,ticks:{...AX.ticks,maxTicksLimit:6,callback:v=>fdate(v)},grid:AX.grid} }
 function rangeFrom(){ return grafRange? Date.now()-grafRange*DAY : null }
 function drawCharts(){
   if(!window.Chart){ document.querySelectorAll('canvas').forEach(c=>c.outerHTML='<p class="mut small">Grafici non disponibili (libreria non caricata, controlla la connessione).</p>'); return }
-  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
-  const from=rangeFrom(), to=Date.now();
-  const xmin0 = from ?? Math.min(to-30*DAY, ...S.tests.map(t=>t.ts));
-  const xmin = xmin0;
+  chartDefaults();
+  const from=rangeFrom(), now=Date.now();
+  // asse dei tempi sui dati del periodo: con pochi test i punti restano al centro, non schiacciati a destra
+  const tsIn=S.tests.map(t=>t.ts).filter(t=>!from||t>=from), d0=tsIn.length?Math.min(...tsIn):(from??now-30*DAY);
+  const pad=Math.max(2*DAY,(now-d0)*0.06);
+  const xmin=Math.max(from??-Infinity,d0-pad), to=now+pad;
   for(const p of shownParams()){
     const el=document.getElementById('cv_'+p); if(!el) continue;
     const pts=testsWith(p).filter(t=>!from||t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); const [lo,hi]=tgt(p);
@@ -1949,7 +1960,7 @@ function drawCharts(){
   // consumi
   const ds=[]; for(const q of TRI){ const I=intervals(q).filter(x=>x.cons!=null&&(!from||x.t2>=from)); if(!I.length) continue;
     const d=[]; for(const x of I){ d.push({x:x.t1,y:x.cons},{x:x.t2,y:x.cons}) }
-    ds.push({label:P[q].n,data:d,borderColor:TRI_COL[q],backgroundColor:TRI_COL[q],pointRadius:0,borderWidth:2,yAxisID:q==='kh'?'y2':'y'}) }
+    ds.push({label:P[q].n,data:d,borderColor:TRI_COL[q],backgroundColor:TRI_COL[q],pointRadius:0,borderWidth:LINEW[ds.length%3],yAxisID:q==='kh'?'y2':'y'}) }
   const c2=document.getElementById('cCons');
   if(c2) charts.cons=new Chart(c2,{type:'line',data:{datasets:ds},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,title:{display:true,text:'ppm/g'}},y2:{...AX,ticks:{...AX.ticks,callback:v=>fmt(v,2)},grace:'10%',position:'right',grid:{display:false},title:{display:true,text:'dKH/g'}}}}});
   // dosi
@@ -1958,7 +1969,7 @@ function drawCharts(){
   for(const q of keys){ const d=[]; let prev=null;
     for(const r of R){ const y= q==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : q==='flow' ? (r.kind==='reactor'?num(r.flow)||0:0) : ((r.kind==='aio'||r.kind==='reactor')?0:num(r[q])||0); if(prev!=null) d.push({x:r.ts,y:prev}); d.push({x:r.ts,y}); prev=y }
     if(prev!=null) d.push({x:to,y:prev});
-    dd.push({label:q==='aio'?'All In One':q==='flow'?'Reattore (ml/min)':P[q].n,data:d.filter(z=>!from||z.x>=from-1),borderColor:q==='aio'||q==='flow'?'#2ec4d6':TRI_COL[q],pointRadius:0,borderWidth:2}) }
+    dd.push({label:q==='aio'?'All In One':q==='flow'?'Reattore (ml/min)':P[q].n,data:d.filter(z=>!from||z.x>=from-1),borderColor:q==='aio'||q==='flow'?'#2ec4d6':TRI_COL[q],pointRadius:0,borderWidth:LINEW[dd.length%3]}) }
   const c3=document.getElementById('cDose');
   if(c3) charts.dose=new Chart(c3,{type:'line',data:{datasets:dd},options:{animation:false,plugins:{legend:{labels:{boxWidth:12}}},scales:{x:xTime(xmin,to),y:{...AX,beginAtZero:true}}}});
 }
@@ -1975,18 +1986,18 @@ function drawSpark(){
 function drawStart(){
   const el=document.getElementById('cStart'); if(!el) return; const si=startInfo();
   const ks=[['nh4','#ef5d5d','y'],['no2','#f4b942','y'],['no3','#3fcf8e','y2']];
-  const ds=ks.map(([p,c,ax])=>({label:P[p].n,data:testsWith(p).filter(t=>t.ts>=si.st).map(t=>({x:t.ts,y:num(t.v[p])})),borderColor:c,backgroundColor:c,pointRadius:3,tension:.2,borderWidth:2,yAxisID:ax})).filter(d=>d.data.length);
+  const ds=ks.map(([p,c,ax])=>({label:P[p].n,data:testsWith(p).filter(t=>t.ts>=si.st).map(t=>({x:t.ts,y:num(t.v[p])})),borderColor:c,backgroundColor:c,tension:.2,borderWidth:2,yAxisID:ax})).filter(d=>d.data.length).map((d,i)=>Object.assign(d,markOf(i,d.borderColor)));
   if(!ds.length){ el.outerHTML='<p class="small mut">Inserisci i test di ammoniaca, nitriti e nitrati per vedere la curva dell\'avvio.</p>'; return }
   if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
-  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
-  charts.start=new Chart(el,{type:'line',data:{datasets:ds},options:{animation:false,plugins:{legend:{labels:{boxWidth:10}}},scales:{x:xTime(si.st,Math.max(Date.now(),si.end||addDays(Date.now(),3))),y:{...AX,beginAtZero:true,title:{display:true,text:'NH₄ / NO₂'}},y2:{...AX,beginAtZero:true,position:'right',grid:{display:false},title:{display:true,text:'NO₃'}}}}});
+  chartDefaults();
+  charts.start=new Chart(el,{type:'line',data:{datasets:ds},options:{animation:false,interaction:{mode:'nearest',intersect:false},plugins:{legend:{labels:{usePointStyle:true,boxWidth:10}},tooltip:{usePointStyle:true}},scales:{x:xTime(si.st,Math.max(Date.now(),si.end||addDays(Date.now(),3))),y:{...AX,beginAtZero:true,title:{display:true,text:'NH₄ / NO₂'}},y2:{...AX,beginAtZero:true,position:'right',grid:{display:false},title:{display:true,text:'NO₃'}}}}});
 }
 function drawTds(){
   const el=document.getElementById('cTds'); if(!el) return; const lr=lastEv('resin'); const from=lr?lr.ts:Date.now()-180*DAY;
   const pts=S.events.filter(e=>e.type==='tds'&&e.ts>=from).sort(byTs).map(e=>({x:e.ts,y:num(e.tds)}));
   if(!pts.length){ el.outerHTML='<p class="small mut" style="margin-top:8px">Nessuna lettura TDS da mostrare.</p>'; return }
   if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
-  Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+  chartDefaults();
   const mx=num(S.settings.tdsMax)||3, x0=lr?lr.ts:pts[0].x-DAY, x1=Math.max(Date.now(),x0+7*DAY);
   charts.tds=new Chart(el,{type:'line',data:{datasets:[{data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:3,stepped:true,borderWidth:2},
     {data:[{x:x0,y:mx},{x:x1,y:mx}],borderColor:'#ef5d5d99',borderDash:[5,4],pointRadius:0,borderWidth:1.2}]},
@@ -2028,7 +2039,7 @@ function parseHash(){
 function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
-  if(changed){ doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
   const tab= v==='home'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
@@ -2122,18 +2133,18 @@ function bind(){
   app.querySelectorAll('[data-gr]').forEach(b=>b.onclick=()=>{grafRange=+b.dataset.gr;render()});
   app.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{confirmKey=b.dataset.ask;render();setTimeout(()=>{if(confirmKey===b.dataset.ask){confirmKey=null;render()}},4000)});
   app.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const [c,id]=b.dataset.del.split(':');confirmKey=null;await delItem(c,id);toast('Eliminato');render()});
-  app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{editTest=clone(S.tests.find(t=>t.id===b.dataset.edit));render();window.scrollTo(0,0)});
+  app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ const t=S.tests.find(x=>x.id===b.dataset.edit); if(!t) return; editTest=clone(t); if(view==='param'&&sub==='nuovo'){ render(); window.scrollTo(0,0) } else go('param-nuovo') });
   app.querySelectorAll('[data-mode]').forEach(b=>b.onclick=async()=>{ if(S.settings.mode===b.dataset.mode) return; S.settings=Object.assign(clone(S.settings),{mode:b.dataset.mode}); await saveSettings(); toast({aio:'Modalità All In One',reactor:'Modalità reattore di calcio',balling:'Modalità Balling 3 parti'}[b.dataset.mode]) });
   app.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{go('diario')});
   const bk=document.getElementById('bkClose'); if(bk) bk.onclick=()=>{ snoozeBackup(); render() };
-  const ce=document.getElementById('cancelEdit'); if(ce) ce.onclick=()=>{editTest=null;render()};
+  const ce=document.getElementById('cancelEdit'); if(ce) ce.onclick=()=>{ editTest=null; go('param-storico') };
 
   const fT=document.getElementById('fTest');
   if(fT) fT.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fT); const v={};
     for(const p of Object.keys(P)){ const n=num(o[p]); if(n!=null) v[p]=n }
     if(!Object.keys(v).length){ toast('Inserisci almeno un valore'); return }
     const item={id:editTest?.id||uid(),ts:fromInput(o.ts),v,note:(o.note||'').trim()};
-    if(await saveItem('tests',item)){ if(!editTest) await autoDone('test',item.ts); editTest=null; testPrefill=null; toast('Test salvato'); render() } };
+    if(await saveItem('tests',item)){ const wasEdit=!!editTest; if(!editTest) await autoDone('test',item.ts); editTest=null; testPrefill=null; toast(wasEdit?'Test modificato':'Test salvato'); if(wasEdit) go('param-storico'); else render() } };
 
   const fD=document.getElementById('fDose');
   if(fD) fD.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fD);

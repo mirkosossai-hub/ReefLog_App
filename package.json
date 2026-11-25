@@ -1,6 +1,6 @@
 {
   "name": "reef-log",
-  "version": "1.8.4",
+  "version": "1.8.8",
   "private": true,
   "description": "Reef Log - gestione acquario marino",
   "dependencies": {
