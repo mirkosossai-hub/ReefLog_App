@@ -182,7 +182,7 @@ const DEF_SETTINGS = {
 };
 
 /* ---------- Stato ---------- */
-const COLLS=['tests','doses','events','tasks','livestock','stock','gear'];
+const COLLS=['tests','doses','events','tasks','livestock','stock','gear','expenses'];
 const S = {tests:[], doses:[], events:[], tasks:[], livestock:[], stock:[], gear:[], lvPhotos:{}, settings:clone(DEF_SETTINGS), mode:'local', ready:false, stale:false};
 let editTask = null, doneOpen = null, testPrefill = null;
 let view = 'home', editTest = null, grafParam = 'kh', grafRange = 90, confirmKey = null;
@@ -739,6 +739,65 @@ function widgetPush(){
   if(d===_wLast) return; _wLast=d; W.update({data:d}).catch(()=>{});
 }
 
+/* ---------- Eventi sui grafici: tacche con cambi d'acqua, dosi, inserimenti, manutenzioni ---------- */
+function chartEvOn(){ return lsGet('reeflog.chartEv')!=='0' }
+function doseTxt(d){ return d.kind==='aio'?`All In One ${fmt(num(d.aio)||0,1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow)||0,1)} ml/min`:`Ca ${fmt(num(d.ca)||0,1)} · KH ${fmt(num(d.kh)||0,1)} · Mg ${fmt(num(d.mg)||0,1)} ml/g` }
+function chartEvents(from,to){
+  if(!chartEvOn()) return [];
+  const out=[], inR=ts=>ts>=from&&ts<=to;
+  for(const e of S.events){ if(!inR(e.ts)) continue;
+    if(e.type==='wc') out.push({ts:e.ts,i:'💧',c:'#2ec4d6',t:`Cambio acqua ${fmt(num(e.liters)||0,1)} L${e.note?' · '+e.note:''}`});
+    else if(e.type==='live') out.push({ts:e.ts,i:'🐠',c:'#f59e0b',t:e.note||'Inserimento in vasca'});
+    else if(e.type==='maint') out.push({ts:e.ts,i:'🔧',c:'#8aa7b6',t:e.note||'Manutenzione'});
+    else if(e.type==='dose') out.push({ts:e.ts,i:'💉',c:'#f472b6',t:'Dose manuale'+(e.note?' · '+e.note:'')});
+    else if(e.type==='note') out.push({ts:e.ts,i:'📝',c:'#cbd5e1',t:e.note||'Nota'}) }
+  const D=[...S.doses].sort(byTs); D.forEach((d,k)=>{ if(!inR(d.ts)) return; const p=D[k-1]; out.push({ts:d.ts,i:'🧪',c:'#a78bfa',t:`Dosaggio: ${p?doseTxt(p)+' → ':''}${doseTxt(d)}${d.note?' · '+d.note:''}`}) });
+  return out.sort(byTs);
+}
+function evPlugin(L){ return {id:'evmarks',afterDatasetsDraw(ch){ if(!L.length) return; const {ctx,chartArea:a,scales:{x}}=ch; ctx.save(); ctx.font='14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='bottom'; const placed=[];
+  for(const m of L){ const px=x.getPixelForValue(m.ts); m._x=null; if(px<a.left-1||px>a.right+1) continue;
+    ctx.strokeStyle=m.c+'77'; ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(px,a.top); ctx.lineTo(px,a.bottom); ctx.stroke(); ctx.setLineDash([]);
+    let lv=0; while(placed.some(q=>q.l===lv&&Math.abs(q.x-px)<17)) lv++; placed.push({x:px,l:lv}); m._x=px; m._y=a.bottom-3-lv*17; ctx.fillText(m.i,px,m._y) }
+  ctx.restore() }} }
+function evClick(L){ return (evt)=>{ let best=null,bd=1e9; for(const m of L){ if(m._x==null) continue; const d=Math.hypot(m._x-evt.x,(m._y-8)-evt.y); if(d<bd){ bd=d; best=m } } if(best&&bd<24) toast(`${best.i} ${fdate(best.ts,true)} · ${best.t}`) } }
+/* ---------- Spese ---------- */
+const EXP_CAT=[['salt','🧂','Sale'],['supp','🧪','Integratori'],['live','🐠','Animali e coralli'],['gear','🔧','Attrezzatura'],['test','📏','Test e reagenti'],['food','🍤','Cibo'],['cons','📦','Consumabili'],['energy','⚡','Energia'],['other','•','Altro']];
+const STOCK_EXP={aio:'supp',ca:'supp',kh:'supp',mg:'supp',salt:'salt',reagent:'test',other:'cons'};
+let expRange='m', expEdit=null;
+function euro(v){ return (Math.round((v||0)*100)/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €' }
+function expFrom(r){ const d=new Date(); if(r==='m') return new Date(d.getFullYear(),d.getMonth(),1).getTime(); if(r==='y') return new Date(d.getFullYear(),0,1).getTime(); return -Infinity }
+function expCat(id){ return EXP_CAT.find(c=>c[0]===id)||EXP_CAT[EXP_CAT.length-1] }
+async function addExpense(o){ return saveItem('expenses',Object.assign({id:uid(),ts:Date.now(),cat:'other',desc:'',amount:0},o)) }
+function vSpese(){
+  const E=S.expenses||[], now=Date.now(), from=expFrom(expRange), L=E.filter(e=>e.ts>=from).sort((a,b)=>b.ts-a.ts);
+  const tot=L.reduce((s,e)=>s+(num(e.amount)||0),0), tm=E.filter(e=>e.ts>=expFrom('m')).reduce((s,e)=>s+(num(e.amount)||0),0), ty=E.filter(e=>e.ts>=expFrom('y')).reduce((s,e)=>s+(num(e.amount)||0),0);
+  const first=E.length?Math.min(...E.map(e=>e.ts)):now, months=Math.max(1,(new Date(now).getFullYear()-new Date(first).getFullYear())*12+new Date(now).getMonth()-new Date(first).getMonth()+1), avg=E.reduce((s,e)=>s+(num(e.amount)||0),0)/months;
+  let h=`<div class="card"><div class="chips" style="margin:0 0 10px">${[['m','Questo mese'],['y','Quest\'anno'],['all','Tutto']].map(([k,l])=>`<button class="chip ${expRange===k?'on':''}" data-exr="${k}">${l}</button>`).join('')}</div>
+    <div class="big" style="font-size:28px">${euro(tot)}</div><div class="small mut">${L.length} ${L.length===1?'spesa':'spese'} · mese ${euro(tm)} · anno ${euro(ty)} · media ${euro(avg)}/mese</div>`;
+  const byCat={}; for(const e of L) byCat[e.cat||'other']=(byCat[e.cat||'other']||0)+(num(e.amount)||0);
+  const cats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]), mx=cats.length?cats[0][1]:1;
+  if(cats.length){ h+=`<div style="margin-top:12px">`; for(const [c,v] of cats){ const C=expCat(c); h+=`<div style="margin:7px 0"><div class="row small" style="justify-content:space-between"><span>${C[1]} ${C[2]}</span><b>${euro(v)}</b></div><div style="height:7px;background:#0a1a24;border-radius:5px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${Math.max(3,100*v/mx)}%;background:var(--acc)"></div></div></div>` } h+=`</div>` }
+  h+=`<button class="btn" id="exAdd" style="width:100%;margin-top:10px">+ Aggiungi spesa</button></div>`;
+  if(expEdit){ const x=expEdit;
+    h+=`<div class="card"><h2>${x.id?'Modifica spesa':'Nuova spesa'}</h2><form id="fEx"><div class="row"><div class="f"><label>Data</label><input type="date" name="d" value="${toInput(x.ts||now).slice(0,10)}"></div><div class="f"><label>Importo (€)</label><input name="amount" inputmode="decimal" placeholder="es. 24,90" value="${num(x.amount)!=null?String(x.amount).replace('.',','):''}"></div></div>
+      <div class="f" style="margin-top:8px"><label>Categoria</label><select name="cat">${EXP_CAT.map(c=>`<option value="${c[0]}" ${(x.cat||'supp')===c[0]?'selected':''}>${c[1]} ${c[2]}</option>`).join('')}</select></div>
+      <div class="f" style="margin-top:8px"><label>Descrizione</label><input name="desc" placeholder="es. Sale Red Sea 7 kg" value="${esc(x.desc||'')}"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="exCancel">Annulla</button></div></form></div>` }
+  h+=`<div class="card"><h2>Elenco</h2>`;
+  if(!L.length) h+=`<div class="small mut">Nessuna spesa in questo periodo. Le confezioni nuove registrate in Scorte con il prezzo vengono aggiunte qui da sole.</div>`;
+  else{ h+=`<div class="list">`; for(const e of L){ const C=expCat(e.cat); h+=`<div class="it"><div class="body"><b>${C[1]} ${esc(e.desc||C[2])}</b><div class="small mut">${fdate(e.ts,true)} · ${C[2]}</div></div><div style="text-align:right"><b>${euro(num(e.amount))}</b><div class="acts" style="margin-top:4px"><button class="btn sm sec" data-exed="${e.id}">✎</button>${delBtn('expenses',e.id)}</div></div></div>` } h+=`</div>` }
+  return h+`</div>`;
+}
+function bindSpese(){
+  document.querySelectorAll('[data-exr]').forEach(b=>b.onclick=()=>{ expRange=b.dataset.exr; render() });
+  const a=document.getElementById('exAdd'); if(a) a.onclick=()=>{ expEdit={}; render(); setTimeout(()=>document.getElementById('fEx')?.scrollIntoView({behavior:'smooth'}),50) };
+  document.querySelectorAll('[data-exed]').forEach(b=>b.onclick=()=>{ expEdit=clone((S.expenses||[]).find(e=>e.id===b.dataset.exed)||{}); render(); setTimeout(()=>document.getElementById('fEx')?.scrollIntoView({behavior:'smooth'}),50) });
+  const c=document.getElementById('exCancel'); if(c) c.onclick=()=>{ expEdit=null; render() };
+  const f=document.getElementById('fEx'); if(f) f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); const amt=num(o.amount); if(!(amt>0)){ toast('Indica l\'importo'); return }
+    const ts=o.d?new Date(o.d+"T12:00").getTime():Date.now(); const it=Object.assign(clone(expEdit),{id:expEdit.id||uid(),ts,amount:Math.round(amt*100)/100,cat:o.cat||'other',desc:(o.desc||'').trim()});
+    if(await saveItem('expenses',it)){ expEdit=null; toast('Spesa salvata'); render() } };
+}
+
 /* ---------- Scorte e consumabili ---------- */
 const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
 const STOCK_UNITS=['pz','ml','L','g','kg','mg'];
@@ -792,6 +851,8 @@ function stockForm(){
   return `<div class="card"><h2>${x.id?'Modifica prodotto':'Nuovo prodotto'}</h2><form id="fSt">
     <div class="row"><div class="f" style="flex:2"><label>Nome</label><input name="name" value="${esc(x.name||'')}" placeholder="es. Yorah All In One"></div><div class="f"><label>Tipo</label><select name="type" id="stType">${Object.entries(STOCK_T).map(([k,[l]])=>`<option value="${k}" ${t===k?'selected':''}>${l}</option>`).join('')}</select></div></div>
     <div class="row" style="margin-top:8px"><div class="f"><label>Quantità attuale (<span id="stU">${stU({type:t,unit:x.unit})}</span>)</label><input name="qty" inputmode="decimal" value="${x.id?String(Math.round(stockInfo(x).rem*100)/100).replace('.',','):''}"></div><div class="f"><label>Confezione piena (facolt.)</label><input name="size" inputmode="decimal" value="${num(x.size)!=null?String(x.size).replace('.',','):''}"></div></div>
+    <div class="row" style="margin-top:8px"><div class="f"><label>Prezzo confezione € (facolt.)</label><input name="price" inputmode="decimal" placeholder="es. 24,90" value="${num(x.price)!=null?String(x.price).replace('.',','):''}"></div></div>
+    <div class="small mut" style="margin-top:4px">Con il prezzo, ogni nuova confezione viene aggiunta da sola alle Spese.</div>
     <div class="row" style="margin-top:8px"><div class="f"><label>Scadenza (facolt.)</label><input type="date" name="expiry" value="${num(x.expiry)?toInput(num(x.expiry)).slice(0,10):''}"></div>
       <div class="f ${t==='other'?'':'hide'}" id="stUnitBox"><label>Unità di misura</label><select name="unit" id="stUnit">${STOCK_UNITS.map(u=>`<option value="${u}" ${stU({type:'other',unit:x.unit})===u?'selected':''}>${u}</option>`).join('')}</select></div>
       <div class="f ${t==='reagent'?'':'hide'}" id="stParam"><label>Test di</label><select name="param">${Object.keys(P).map(p=>`<option value="${p}" ${x.param===p?'selected':''}>${P[p].n}</option>`).join('')}</select></div>
@@ -850,7 +911,7 @@ function bindStockGear(){
   app.querySelectorAll('[data-stuseform]').forEach(fm=>fm.onsubmit=async e=>{ e.preventDefault(); const it=S.stock.find(x=>x.id===fm.dataset.stuseform); const q=num(formVals(fm).q); if(!it||!(q>0)){ toast('Indica la quantità'); return }
     const rem=stockInfo(it).rem; await saveItem('stock',Object.assign(clone(it),{qty:Math.max(0,rem-q),setTs:Date.now()})); stockUse=null; toast(`Scalati ${fmt(q,stU(it)==='kg'||stU(it)==='L'?2:0)} ${stU(it)}`); render() });
   app.querySelectorAll('[data-strefill]').forEach(b=>b.onclick=async()=>{ const it=S.stock.find(x=>x.id===b.dataset.strefill); if(!it) return; if(!num(it.size)){ stockEdit=clone(it); render(); toast('Indica la nuova quantità'); return }
-    await saveItem('stock',Object.assign(clone(it),{qty:num(it.size),setTs:Date.now()})); toast('Nuova confezione registrata') });
+    await saveItem('stock',Object.assign(clone(it),{qty:num(it.size),setTs:Date.now()})); if(num(it.price)>0){ await addExpense({cat:STOCK_EXP[it.type]||'cons',desc:it.name,amount:num(it.price),src:'stock'}); toast(`Nuova confezione registrata · ${euro(num(it.price))} nelle Spese`) } else toast('Nuova confezione registrata'); render() });
   const f=document.getElementById('fSt');
   if(f){ const ty=document.getElementById('stType'); const un=document.getElementById('stUnit'); un.onchange=()=>{ document.getElementById('stU').textContent=un.value }; ty.onchange=()=>{ document.getElementById('stU').textContent=stU({type:ty.value,unit:un.value}); document.getElementById('stUnitBox').classList.toggle('hide',ty.value!=='other'); document.getElementById('stLink').classList.toggle('hide',ty.value!=='other'); document.getElementById('stParam').classList.toggle('hide',ty.value!=='reagent'); document.getElementById('stSalt').classList.toggle('hide',ty.value!=='salt') };
     const tsel=document.getElementById('stTask'); tsel.onchange=()=>{ document.getElementById('stPerBox').classList.toggle('hide',!tsel.value); document.getElementById('stNewTask').classList.toggle('hide',tsel.value!=='new') };
@@ -860,8 +921,8 @@ function bindStockGear(){
       if(task&&!(per>0)){ toast('Indica quanto ne usi ogni volta'); return }
       if(task==='new'){ const ev=Math.max(1,Math.round(num(o.tevery)||0)); if(!(o.tname||'').trim()||!ev){ toast('Indica nome e giorni della manutenzione'); return }
         const nt={id:uid(),name:o.tname.trim(),kind:'interval',every:ev}; if(!await saveItem('tasks',nt)) return; task=nt.id }
-      const it=Object.assign(clone(stockEdit),{task,per,id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null,unit:o.type==='other'?o.unit:null});
-      if(await saveItem('stock',it)){ stockEdit=null; toast('Prodotto salvato'); render() } } }
+      const it=Object.assign(clone(stockEdit),{task,per,id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null,unit:o.type==='other'?o.unit:null,price:num(o.price)});
+      const isNewSt=!stockEdit.id; if(await saveItem('stock',it)){ if(isNewSt&&num(it.price)>0) await addExpense({cat:STOCK_EXP[it.type]||'cons',desc:it.name,amount:num(it.price),src:'stock'}); stockEdit=null; toast(isNewSt&&num(it.price)>0?'Prodotto salvato · aggiunto alle Spese':'Prodotto salvato'); render() } } }
   const ga=document.getElementById('grAdd'); if(ga) ga.onclick=()=>{ gearEdit={}; render() };
   app.querySelectorAll('[data-gredit]').forEach(b=>b.onclick=()=>{ gearEdit=clone(S.gear.find(x=>x.id===b.dataset.gredit)); render(); window.scrollTo(0,0) });
   app.querySelectorAll('[data-grtask]').forEach(b=>b.onclick=()=>{ gearTaskFor=b.dataset.grtask; render() });
@@ -876,11 +937,11 @@ function bindStockGear(){
   if(g){ document.getElementById('grCancel').onclick=()=>{ gearEdit=null; render() };
     g.onsubmit=async e=>{ e.preventDefault(); const o=formVals(g); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return }
       const it=Object.assign(clone(gearEdit),{id:gearEdit.id||uid(),name:o.name.trim(),type:o.type,brand:(o.brand||'').trim(),price:num(o.price),purchased:d2ts(o.purchased),warranty:d2ts(o.warranty),note:(o.note||'').trim()});
-      if(await saveItem('gear',it)){ gearEdit=null; toast('Apparecchio salvato'); render() } } }
+      const isNewG=!gearEdit.id; if(await saveItem('gear',it)){ if(isNewG&&num(it.price)>0) await addExpense({ts:it.purchased||Date.now(),cat:'gear',desc:[it.brand,it.name].filter(Boolean).join(' '),amount:num(it.price),src:'gear'}); gearEdit=null; toast(isNewG&&num(it.price)>0?'Apparecchio salvato · aggiunto alle Spese':'Apparecchio salvato'); render() } } }
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.9.2';
+const APP_VERSION='1.10.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1251,6 +1312,10 @@ const GUIDE=[
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro;</li><li><b>Altro</b> (carbone, resine, calze filtranti…): scegli l'unità di misura (pz, ml, L, g, kg, mg) e, se vuoi, collega una manutenzione con la quantità usata ogni volta. Ad esempio carbone, 100 ml a ogni «Cambio carbone» ogni 30 giorni: quando segni il cambio come fatto, la scorta scende da sola. Se non lo colleghi, usa <b>Ho usato…</b> per scalare a mano.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
+ {id:'spese',i:'💶',t:'Spese',b:`<p>In <b>Menu → Spese</b> registri quanto spendi: data, importo, categoria (sale, integratori, animali e coralli, attrezzatura, test, cibo, consumabili, energia, altro) e una descrizione. In alto vedi il totale del mese, dell'anno o di sempre, la media mensile e la ripartizione per categoria.</p>
+  <p>Alcune spese si aggiungono da sole: in <b>Scorte</b>, se indichi il prezzo della confezione, ogni <b>Nuova confezione</b> finisce nelle Spese; in <b>Attrezzatura</b>, un apparecchio nuovo con prezzo viene registrato alla data di acquisto. Puoi sempre correggerle o eliminarle.</p>`},
+ {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Nei grafici dei parametri compaiono delle icone sulla linea del tempo: 💧 cambio d'acqua, 🧪 variazione di dosaggio, 🐠 inserimento di animali o coralli, 🔧 manutenzione, 💉 dose manuale, 📝 nota. Tocca un'icona per vedere data e dettagli.</p>
+  <p>Servono a capire il perché di una variazione: se i nitrati salgono e poco prima c'è un 🐠, o il KH scende dopo un 🧪. Il pulsante <b>📌 Eventi</b> in cima ai grafici le mostra o le nasconde.</p>`},
  {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>In fondo alla Home trovi <b>⚙ Personalizza la Home</b>. Lì scegli quali riquadri vedere (foto della vasca, avvio, report AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
   <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Con <b>✂ Ritaglia per la Home</b> scegli solo la parte che ti interessa (per esempio togliendo il mobile o la finestra): il ritaglio usa i pixel originali, quindi resta nitido, e la foto nella galleria non cambia. Ogni vasca ha la sua Home.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
@@ -1267,7 +1332,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -1889,7 +1954,7 @@ function vDosi(){
 
 function shownParams(){ return (S.settings.showParams||Object.keys(P)).filter(p=>P[p]) }
 function vGraf(){
-  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}</div></div>`;
+  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}<button class="chip ${chartEvOn()?'on':''}" id="evTog" title="Mostra cambi d'acqua, dosi, inserimenti e manutenzioni">📌 Eventi</button></div>${chartEvOn()?'<div class="small mut" style="margin-top:6px">💧 cambio acqua · 🧪 dosaggio · 🐠 inserimento · 🔧 manutenzione · tocca un\'icona per i dettagli</div>':''}</div>`;
   const ps=shownParams();
   if(!ps.length) h+=`<div class="card mut">Nessun parametro selezionato: spuntali in Impostazioni → Range obiettivo.</div>`;
   for(const p of ps){ const n=testsWith(p).length;
@@ -2045,14 +2110,15 @@ function drawCharts(){
   const tsIn=S.tests.map(t=>t.ts).filter(t=>!from||t>=from), d0=tsIn.length?Math.min(...tsIn):(from??now-30*DAY);
   const pad=Math.max(2*DAY,(now-d0)*0.06);
   const xmin=Math.max(from??-Infinity,d0-pad), to=now+pad;
+  const EVL=chartEvents(xmin,to);
   for(const p of shownParams()){
-    const el=document.getElementById('cv_'+p); if(!el) continue;
+    const el=document.getElementById('cv_'+p); if(!el) continue; const evl=EVL.map(m=>Object.assign({},m));
     const pts=testsWith(p).filter(t=>!from||t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); const [lo,hi]=tgt(p);
     charts['v_'+p]=new Chart(el,{type:'line',data:{datasets:[
       {label:P[p].n,data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:3.5,tension:.25,borderWidth:2},
       {label:'min',data:[{x:xmin,y:lo},{x:to,y:lo}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2},
       {label:'max',data:[{x:xmin,y:hi},{x:to,y:hi}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2,fill:'-1',backgroundColor:'#3fcf8e12'}
-    ]},options:{animation:false,plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0,callbacks:{title:i=>fdate(i[0].parsed.x,true)}}},scales:{x:xTime(xmin,to),y:AX}}});
+    ]},plugins:[evPlugin(evl)],options:{animation:false,onClick:evClick(evl),layout:{padding:{top:evl.length?4:0}},plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0,callbacks:{title:i=>fdate(i[0].parsed.x,true)}}},scales:{x:xTime(xmin,to),y:evl.length?{...AX,grace:'12%'}:AX}}});
   }
   // consumi
   const ds=[]; for(const q of TRI){ const I=intervals(q).filter(x=>x.cons!=null&&(!from||x.t2>=from)); if(!I.length) continue;
@@ -2106,7 +2172,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -2125,6 +2191,7 @@ const VIEWS={
   scorte:()=>backBar()+vScorte(),
   pdf:()=>backBar()+vPDF(),
   homecfg:vHomeCfg,
+  spese:()=>backBar()+vSpese(),
   attrezzatura:()=>backBar()+vGear(),
   report:()=>backBar()+vReport(),
 };
@@ -2137,7 +2204,7 @@ function parseHash(){
 function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
-  if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; expEdit=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
   const tab= v==='home'||v==='homecfg'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
@@ -2162,6 +2229,7 @@ function vMenu(){
     ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
     ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
     ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
+    ['spese','💶','Spese','quanto spendi in sale, integratori, animali, attrezzatura'],
     ['pdf','📄','Report PDF','documento con valori, grafici e storico da condividere'],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
@@ -2229,6 +2297,7 @@ function bind(){
   app.querySelectorAll('[data-graf]').forEach(b=>b.onclick=()=>{const p=b.dataset.graf;go('param-grafici');setTimeout(()=>{const el=document.getElementById('g_'+p);if(el)el.scrollIntoView({block:'start'})},80)});
   app.querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>go(view+'-'+b.dataset.sub));
   app.querySelectorAll('[data-gr]').forEach(b=>b.onclick=()=>{grafRange=+b.dataset.gr;render()});
+  const evt=document.getElementById('evTog'); if(evt) evt.onclick=()=>{ lsSet('reeflog.chartEv',chartEvOn()?'0':'1'); render() };
   app.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{confirmKey=b.dataset.ask;render();setTimeout(()=>{if(confirmKey===b.dataset.ask){confirmKey=null;render()}},4000)});
   app.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const [c,id]=b.dataset.del.split(':');confirmKey=null;await delItem(c,id);toast('Eliminato');render()});
   app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ const t=S.tests.find(x=>x.id===b.dataset.edit); if(!t) return; editTest=clone(t); if(view==='param'&&sub==='nuovo'){ render(); window.scrollTo(0,0) } else go('param-nuovo') });
@@ -2261,7 +2330,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg(); bindSpese();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
