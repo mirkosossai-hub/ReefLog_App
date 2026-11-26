@@ -941,7 +941,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.10.0';
+const APP_VERSION='1.10.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1316,7 +1316,7 @@ const GUIDE=[
   <p>Alcune spese si aggiungono da sole: in <b>Scorte</b>, se indichi il prezzo della confezione, ogni <b>Nuova confezione</b> finisce nelle Spese; in <b>Attrezzatura</b>, un apparecchio nuovo con prezzo viene registrato alla data di acquisto. Puoi sempre correggerle o eliminarle.</p>`},
  {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Nei grafici dei parametri compaiono delle icone sulla linea del tempo: 💧 cambio d'acqua, 🧪 variazione di dosaggio, 🐠 inserimento di animali o coralli, 🔧 manutenzione, 💉 dose manuale, 📝 nota. Tocca un'icona per vedere data e dettagli.</p>
   <p>Servono a capire il perché di una variazione: se i nitrati salgono e poco prima c'è un 🐠, o il KH scende dopo un 🧪. Il pulsante <b>📌 Eventi</b> in cima ai grafici le mostra o le nasconde.</p>`},
- {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>In fondo alla Home trovi <b>⚙ Personalizza la Home</b>. Lì scegli quali riquadri vedere (foto della vasca, avvio, report AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
+ {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>In fondo alla Home trovi <b>⚙ Personalizza la Home</b>. Lì scegli quali riquadri vedere (foto della vasca, avvio, report settimanale AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
   <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Con <b>✂ Ritaglia per la Home</b> scegli solo la parte che ti interessa (per esempio togliendo il mobile o la finestra): il ritaglio usa i pixel originali, quindi resta nitido, e la foto nella galleria non cambia. Ogni vasca ha la sua Home.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
@@ -1684,7 +1684,7 @@ function render(){
 }
 
 /* ---------- Home personalizzabile (ogni vasca la sua) ---------- */
-const HOME_BLOCKS=[['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','✨','Report AI','solo Pro, se attivo'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
+const HOME_BLOCKS=[['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','📋','Report settimanale AI','commento automatico dell\'assistente AI (Pro): non è il Report PDF'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
 function homeCfg(){ return Object.assign({order:[],hide:{},photo:null},S.settings.home||{}) }
 function homeOrder(){ const o=homeCfg().order.filter(id=>HOME_BLOCKS.some(b=>b[0]===id)); for(const [id] of HOME_BLOCKS) if(!o.includes(id)) o.push(id); return o }
 function homeHidden(id){ const c=homeCfg(); if(id==='photo') return !c.photo||!S.photos.some(p=>p.id===c.photo)||c.hide.photo; return !!c.hide[id] }
@@ -1745,7 +1745,8 @@ function vHomeCfg(){
   let h=`<div class="back"><button data-go="home">‹ Home</button><h1>Personalizza la Home</h1></div>
   <div class="card"><div class="small mut" style="margin-bottom:8px">Scegli cosa vedere nella Home di <b>${esc(tankName())}</b> e in che ordine. Le modifiche si salvano subito.</div><div class="list">`;
   ord.forEach((id,i)=>{ const b=HOME_BLOCKS.find(x=>x[0]===id); const on=!c.hide[id];
-    h+=`<div class="it"><div class="body"><label style="display:flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" data-hshow="${id}" ${on?'checked':''} style="width:auto"><span><b>${b[1]} ${b[2]}</b>${b[3]?`<div class="small mut">${b[3]}</div>`:''}</span></label></div>
+    const note=id==='report'&&!reportOn()?`<div class="small" style="color:var(--warn)">Non attivo: ${isPro()?'accendi il report settimanale in Impostazioni → Assistente AI':'serve il piano Pro'}</div>`:'';
+    h+=`<div class="it"><div class="body"><label style="display:flex;gap:10px;align-items:center;cursor:pointer"><input type="checkbox" data-hshow="${id}" ${on?'checked':''} style="width:auto"><span><b>${b[1]} ${b[2]}</b>${b[3]?`<div class="small mut">${b[3]}</div>`:''}${note}</span></label></div>
       <div class="acts"><button class="btn sm sec" data-hmv="${id}" data-d="-1" ${i===0?'disabled':''}>↑</button><button class="btn sm sec" data-hmv="${id}" data-d="1" ${i===ord.length-1?'disabled':''}>↓</button></div></div>` });
   h+=`</div></div><div class="card"><h2>Foto della vasca</h2>`;
   if(!S.photos.length) h+=`<div class="small">Non hai ancora foto. Aggiungile in <a href="#vasca-foto">Vasca → Foto</a> e poi scegline una qui.</div>`;
