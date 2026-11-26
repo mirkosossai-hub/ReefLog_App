@@ -1103,7 +1103,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.11.0';
+const APP_VERSION='1.11.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1484,7 +1484,7 @@ const GUIDE=[
   <p>Alcune spese si aggiungono da sole: in <b>Scorte</b>, se indichi il prezzo della confezione, ogni <b>Nuova confezione</b> finisce nelle Spese; in <b>Attrezzatura</b>, un apparecchio nuovo con prezzo viene registrato alla data di acquisto. Puoi sempre correggerle o eliminarle.</p>`},
  {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Nei grafici dei parametri compaiono delle icone sulla linea del tempo: 💧 cambio d'acqua, 🧪 variazione di dosaggio, 🐠 inserimento di animali o coralli, 🔧 manutenzione, 💉 dose manuale, 📝 nota. Tocca un'icona per vedere data e dettagli.</p>
   <p>Servono a capire il perché di una variazione: se i nitrati salgono e poco prima c'è un 🐠, o il KH scende dopo un 🧪. Il pulsante <b>📌 Eventi</b> in cima ai grafici le mostra o le nasconde.</p>`},
- {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>In fondo alla Home trovi <b>⚙ Personalizza la Home</b>. Lì scegli quali riquadri vedere (foto della vasca, avvio, report settimanale AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
+ {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>Da <b>Menu → Personalizza la Home</b>, o dal pulsante in fondo alla Home, apri la personalizzazione. Lì scegli quali riquadri vedere (foto della vasca, avvio, report settimanale AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
   <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Con <b>✂ Ritaglia per la Home</b> scegli solo la parte che ti interessa (per esempio togliendo il mobile o la finestra): il ritaglio usa i pixel originali, quindi resta nitido, e la foto nella galleria non cambia. Ogni vasca ha la sua Home.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
@@ -1500,7 +1500,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={alimentazione:'alimentazione',icp:'icp',spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={homecfg:'homecfg',alimentazione:'alimentazione',icp:'icp',spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -2396,6 +2396,7 @@ function vMenu(){
     ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
+    ['homecfg','🏠','Personalizza la Home','scegli e riordina i riquadri, foto della vasca'],
     ['ai','✨','Assistente AI',isPro()?(aiKey()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
     ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
     ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
