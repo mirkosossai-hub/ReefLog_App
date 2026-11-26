@@ -1103,7 +1103,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.11.1';
+const APP_VERSION='1.11.2';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1419,10 +1419,13 @@ const GUIDE=[
   <li><b>Vasca</b>: animali, coralli e foto.</li>
   <li><b>Menu</b>: dosaggio, manutenzione, osmosi, diario, impostazioni, backup e questa guida.</li></ul>
   <p>Il pulsante <b>?</b> in alto apre la spiegazione della sezione in cui ti trovi. Il tasto indietro di Android torna alla sezione precedente; dalla Home chiede se vuoi uscire.</p>`},
- {id:'home',i:'🏠',t:'La Home',b:`<ul><li><b>Avvio / Maturazione</b>: giorni trascorsi e curva di ammoniaca, nitriti e nitrati (solo se hai impostato un avvio).</li>
+ {id:'home',i:'🏠',t:'La Home',b:`<p><b>La Home si può personalizzare.</b> Con il pulsante <b>⚙ Personalizza la Home</b> in fondo alla pagina, o da <b>Menu → Personalizza la Home</b>, scegli quali riquadri vedere e in che ordine, e puoi mettere in alto una foto della vasca, anche ritagliata. <a data-g="homecfg">Come funziona</a></p>
+  <button class="btn sm" data-go="homecfg" style="margin-bottom:10px">⚙ Personalizza la Home</button>
+  <p>I riquadri disponibili:</p><ul><li><b>Foto della vasca</b>: la foto che scegli, con il nome della vasca e da quanti giorni è avviata.</li><li><b>Avvio / Maturazione</b>: giorni trascorsi e curva di ammoniaca, nitriti e nitrati (solo se hai impostato un avvio).</li>
   <li><b>Da fare</b>: scadenze di oggi, di domani o in ritardo, e l'avviso se il TDS dell'osmosi è troppo alto.</li>
   <li><b>Ultimi valori</b>: l'ultima misura di ogni parametro, con la variazione rispetto alla precedente. Il bordo colorato indica: <span style="color:var(--ok)">verde</span> nel range, <span style="color:var(--warn)">giallo</span> vicino ai limiti, <span style="color:var(--bad)">rosso</span> lontano. Tocca un valore per aprirne il grafico.</li>
-  <li><b>Triade</b>: dose attuale, consumo giornaliero e dose consigliata per calcio, KH e magnesio.</li></ul>`},
+  <li><b>Triade</b>: dose attuale, consumo giornaliero e dose consigliata per calcio, KH e magnesio.</li>
+  <li><b>Report settimanale AI</b> (Pro): il commento dell'assistente sui dati della settimana, se l'hai attivato.</li></ul>`},
  {id:'test',i:'🧪',t:'Test e parametri',b:`<p>In <b>Parametri → Nuovo test</b> compila solo i valori che hai misurato. Gli altri lasciali vuoti: non contano come zero. Il segnaposto grigio mostra l'ultimo valore. Puoi usare la virgola.</p>
   <p>Puoi cambiare data e ora se inserisci un test fatto prima. In <b>Storico</b> modifichi (✎) o elimini (🗑, due tocchi) i test.</p>
   <p>In <b>Grafici</b> c'è un grafico per ogni parametro spuntato in Impostazioni, con la fascia verde del range. I pulsanti in alto cambiano il periodo. In fondo ci sono i consumi della triade e la storia delle dosi.</p>`},
