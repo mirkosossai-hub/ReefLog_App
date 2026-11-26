@@ -182,7 +182,7 @@ const DEF_SETTINGS = {
 };
 
 /* ---------- Stato ---------- */
-const COLLS=['tests','doses','events','tasks','livestock','stock','gear','expenses'];
+const COLLS=['tests','doses','events','tasks','livestock','stock','gear','expenses','feeds','icp'];
 const S = {tests:[], doses:[], events:[], tasks:[], livestock:[], stock:[], gear:[], lvPhotos:{}, settings:clone(DEF_SETTINGS), mode:'local', ready:false, stale:false};
 let editTask = null, doneOpen = null, testPrefill = null;
 let view = 'home', editTest = null, grafParam = 'kh', grafRange = 90, confirmKey = null;
@@ -751,6 +751,7 @@ function chartEvents(from,to){
     else if(e.type==='maint') out.push({ts:e.ts,i:'🔧',c:'#8aa7b6',t:e.note||'Manutenzione'});
     else if(e.type==='dose') out.push({ts:e.ts,i:'💉',c:'#f472b6',t:'Dose manuale'+(e.note?' · '+e.note:'')});
     else if(e.type==='note') out.push({ts:e.ts,i:'📝',c:'#cbd5e1',t:e.note||'Nota'}) }
+  if(lsGet('reeflog.chartFeed')==='1') for(const f of (S.feeds||[])) if(inR(f.ts)) out.push({ts:f.ts,i:'🍤',c:'#fb923c',t:`Pasto: ${f.food}${num(f.qty)?' '+fmt(num(f.qty),1)+' '+(f.unit||''):''} (${(FEED_WHO[f.who]||FEED_WHO.fish)[1].toLowerCase()})`});
   const D=[...S.doses].sort(byTs); D.forEach((d,k)=>{ if(!inR(d.ts)) return; const p=D[k-1]; out.push({ts:d.ts,i:'🧪',c:'#a78bfa',t:`Dosaggio: ${p?doseTxt(p)+' → ':''}${doseTxt(d)}${d.note?' · '+d.note:''}`}) });
   return out.sort(byTs);
 }
@@ -798,6 +799,165 @@ function bindSpese(){
     if(await saveItem('expenses',it)){ expEdit=null; toast('Spesa salvata'); render() } };
 }
 
+/* ---------- Alimentazione (base) ---------- */
+const FEED_WHO={fish:['🐟','Pesci'],coral:['🪸','Coralli'],both:['🐟🪸','Pesci e coralli']};
+const FEED_U=['g','ml','cubetti','pizzichi','gocce','pz'];
+let feedEdit=null;
+function foods(){ return (S.settings.foods||[]).filter(f=>f&&f.name) }
+async function saveFoods(L){ S.settings.foods=L; await saveSettings() }
+function feedLine(f){ return `${(FEED_WHO[f.who]||FEED_WHO.fish)[0]} ${esc(f.food)}${num(f.qty)?` · ${fmt(num(f.qty),1)} ${esc(f.unit||'')}`:''}` }
+function vFeed(){
+  const F=[...(S.feeds||[])].sort((a,b)=>b.ts-a.ts), now=Date.now(), n7=F.filter(f=>f.ts>now-7*DAY).length, n30=F.filter(f=>f.ts>now-30*DAY);
+  const cnt={}; for(const f of n30) cnt[f.food]=(cnt[f.food]||0)+1; const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const fav=foods();
+  let h=`<div class="card"><h2>Pasto veloce</h2>`;
+  if(!fav.length) h+=`<div class="small mut">Aggiungi i cibi che usi più spesso: comparirà qui un pulsante per registrarli con un tocco.</div>`;
+  else h+=`<div class="chips" style="margin:0">${fav.map((f,i)=>`<button class="chip" data-ffav="${i}">${(FEED_WHO[f.who]||FEED_WHO.fish)[0]} ${esc(f.name)}${num(f.qty)?` · ${fmt(num(f.qty),1)} ${esc(f.unit||'')}`:''}</button>`).join('')}</div><div class="small mut" style="margin-top:6px">Un tocco registra il pasto adesso.</div>`;
+  h+=`<button class="btn sec" id="feAdd" style="width:100%;margin-top:10px">+ Registra un altro pasto</button></div>`;
+  if(feedEdit){ const x=feedEdit;
+    h+=`<div class="card"><h2>${x.id?'Modifica pasto':'Nuovo pasto'}</h2><form id="fFe"><div class="row"><div class="f"><label>Quando</label><input type="datetime-local" name="ts" value="${toInput(x.ts||now)}"></div><div class="f"><label>A chi</label><select name="who">${Object.entries(FEED_WHO).map(([k,v])=>`<option value="${k}" ${(x.who||'fish')===k?'selected':''}>${v[0]} ${v[1]}</option>`).join('')}</select></div></div>
+      <div class="f" style="margin-top:8px"><label>Cibo</label><input name="food" list="feFoods" placeholder="es. Artemia congelata" value="${esc(x.food||'')}"><datalist id="feFoods">${fav.map(f=>`<option value="${esc(f.name)}">`).join('')}</datalist></div>
+      <div class="row" style="margin-top:8px"><div class="f"><label>Quantità (facolt.)</label><input name="qty" inputmode="decimal" value="${num(x.qty)!=null?String(x.qty).replace('.',','):''}"></div><div class="f"><label>Unità</label><select name="unit">${FEED_U.map(u=>`<option ${(x.unit||'g')===u?'selected':''}>${u}</option>`).join('')}</select></div></div>
+      <div class="f" style="margin-top:8px"><label>Nota (facolt.)</label><input name="note" value="${esc(x.note||'')}"></div>
+      ${x.id?'':`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="fav" style="width:auto;margin-right:6px">Salva tra i preferiti (pulsante veloce)</label>`}
+      <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="feCancel">Annulla</button></div></form></div>` }
+  h+=`<div class="card"><h2>Riepilogo</h2><div class="row"><div><div class="big">${n7}</div><div class="small mut">pasti in 7 giorni</div></div><div><div class="big">${n30.length}</div><div class="small mut">in 30 giorni</div></div></div>
+    ${top.length?`<div class="small" style="margin-top:8px">Più usati: ${top.map(([k,v])=>`${esc(k)} (${v})`).join(' · ')}</div>`:''}
+    <div class="small mut" style="margin-top:8px">Per un promemoria (es. coralli il martedì e il venerdì) crea una voce in <a href="#manut">Manutenzioni</a>. Per far scendere le scorte del cibo, in Scorte scegli «Si consuma con: Alimentazione».</div></div>`;
+  h+=`<div class="card"><h2>Ultimi pasti</h2>`;
+  if(!F.length) h+=`<div class="small mut">Nessun pasto registrato.</div>`;
+  else{ h+=`<div class="list">`; for(const f of F.slice(0,60)) h+=`<div class="it"><div class="body"><b>${feedLine(f)}</b><div class="small mut">${fdate(f.ts,true)} ${new Date(f.ts).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${f.note?' · '+esc(f.note):''}</div></div><div class="acts"><button class="btn sm sec" data-feed="${f.id}">✎</button>${delBtn('feeds',f.id)}</div></div>`; h+=`</div>` }
+  h+=`</div>`;
+  if(fav.length) h+=`<div class="card"><h2>Cibi preferiti</h2><div class="list">${fav.map((f,i)=>`<div class="it"><div class="body">${(FEED_WHO[f.who]||FEED_WHO.fish)[0]} ${esc(f.name)}${num(f.qty)?` · ${fmt(num(f.qty),1)} ${esc(f.unit||'')}`:''}</div><div class="acts"><button class="btn sm sec" data-fdel="${i}">🗑</button></div></div>`).join('')}</div></div>`;
+  return h;
+}
+function bindFeed(){
+  document.querySelectorAll('[data-ffav]').forEach(b=>b.onclick=async()=>{ const f=foods()[+b.dataset.ffav]; if(!f) return; const it={id:uid(),ts:Date.now(),who:f.who||'fish',food:f.name,qty:num(f.qty),unit:f.unit||''};
+    if(await saveItem('feeds',it)){ toast(`Pasto registrato: ${f.name}`); render() } });
+  const a=document.getElementById('feAdd'); if(a) a.onclick=()=>{ feedEdit={}; render(); setTimeout(()=>document.getElementById('fFe')?.scrollIntoView({behavior:'smooth'}),50) };
+  const c=document.getElementById('feCancel'); if(c) c.onclick=()=>{ feedEdit=null; render() };
+  document.querySelectorAll('[data-feed]').forEach(b=>b.onclick=()=>{ feedEdit=clone((S.feeds||[]).find(x=>x.id===b.dataset.feed)||{}); render(); setTimeout(()=>document.getElementById('fFe')?.scrollIntoView({behavior:'smooth'}),50) });
+  document.querySelectorAll('[data-fdel]').forEach(b=>b.onclick=async()=>{ if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Sicuro?'; return } const L=foods(); L.splice(+b.dataset.fdel,1); await saveFoods(L); render() });
+  const f=document.getElementById('fFe'); if(f) f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); const food=(o.food||'').trim(); if(!food){ toast('Indica il cibo'); return }
+    const ts=o.ts?new Date(o.ts).getTime():Date.now(); const it=Object.assign(clone(feedEdit),{id:feedEdit.id||uid(),ts:isFinite(ts)?ts:Date.now(),who:o.who||'fish',food,qty:num(o.qty),unit:o.unit||'',note:(o.note||'').trim()});
+    if(!await saveItem('feeds',it)) return;
+    if(o.fav&&!foods().some(x=>x.name.toLowerCase()===food.toLowerCase())) await saveFoods([...foods(),{name:food,who:it.who,qty:it.qty,unit:it.unit}]);
+    feedEdit=null; toast('Pasto salvato'); render() };
+}
+function feedUsed(it,t1,t2){ let u=0; const n=(it.name||'').trim().toLowerCase(); for(const f of (S.feeds||[])) if(f.ts>t1&&f.ts<=t2&&(f.food||'').trim().toLowerCase()===n) u+=num(f.qty)||0; return u }
+/* ---------- Analisi ICP (Pro) ---------- */
+// Valori di riferimento per acquari di barriera: Fauna Marin Lab (min · ideale · max). Principali e nutrienti in mg/L, tracce e inquinanti in µg/L.
+const ICP_GROUPS=[['maj','Elementi principali','mg/L'],['nut','Nutrienti','mg/L'],['tr','Elementi in tracce','µg/L'],['pol','Inquinanti e altri','µg/L']];
+const ICP_EL=[
+ ['Na','Sodio','maj',9500,10700,11500],['Mg','Magnesio','maj',1200,1350,1450],['Ca','Calcio','maj',400,425,440],['K','Potassio','maj',380,395,420],['Sr','Stronzio','maj',6.5,8,9],['B','Boro','maj',3.8,4.5,5.5],['Br','Bromo','maj',55,67,75],['S','Zolfo','maj',850,900,950],['F','Fluoro','maj',0.9,1.3,1.6],
+ ['P','Fosforo','nut',0.006,null,0.06],['Si','Silicio','nut',0.1,null,0.2],
+ ['I','Iodio','tr',55,65,80],['Li','Litio','tr',180,null,350],['Mo','Molibdeno','tr',10,15,20],['Ba','Bario','tr',5,null,50],['Zn','Zinco','tr',3,5.5,8],['V','Vanadio','tr',2,6,10],['Cu','Rame','tr',2,4,6],['Ni','Nichel','tr',3,4.5,6],['Fe','Ferro','tr',0,null,2.5],['Mn','Manganese','tr',0,null,0.25],['Co','Cobalto','tr',0,null,1.9],['Cr','Cromo','tr',0,null,2.3],['Se','Selenio','tr',0,null,2],
+ ['Al','Alluminio','pol',0,null,30],['Sn','Stagno','pol',0,null,10],['Sb','Antimonio','pol',0,null,10],['Ag','Argento','pol',0,null,10],['W','Tungsteno','pol',0,null,30],['Ti','Titanio','pol',0,null,3.5],['Zr','Zirconio','pol',0,null,2.2],['La','Lantanio','pol',0,null,10],['Pb','Piombo','pol',0,null,0],['Cd','Cadmio','pol',0,null,0],['Hg','Mercurio','pol',0,null,0],['As','Arsenico','pol',0,null,0],['Be','Berillio','pol',0,null,0]];
+const ICP_X=[['kh','KH','dKH'],['no3','Nitrati','mg/L'],['po4','Fosfati','mg/L']];
+const ICP_LABS=['Triton','ATI','Fauna Marin','Oceamo','Reef Factory','Altro'];
+let icpEdit=null, icpOpen=null, icpEl=null, _icpBusy='';
+function icpUnit(g){ return (ICP_GROUPS.find(x=>x[0]===g)||ICP_GROUPS[0])[2] }
+function icpSt(e,v){ if(v==null) return ''; const [,,,lo,,hi]=e; if(hi===0) return v>0?'s-bad':'s-ok';
+  if(v>=lo&&v<=hi) return 's-ok'; const span=Math.max(hi-lo,hi*0.2); return (v<lo&&v>=lo-span*0.3)||(v>hi&&v<=hi+span*0.3)?'s-warn':'s-bad' }
+function icpRange(e){ const [,,,lo,id,hi]=e; if(hi===0) return 'non rilevabile'; if(!lo) return `≤ ${fmt(hi,hi<1?2:1)}`; return `${fmt(lo,lo<1?3:1)}–${fmt(hi,hi<1?3:1)}${id!=null?` (ideale ${fmt(id,id<1?3:1)})`:''}` }
+function icpList(){ return [...(S.icp||[])].sort((a,b)=>b.ts-a.ts) }
+function icpCount(a){ let ok=0,w=0,b=0; for(const e of ICP_EL){ const s=icpSt(e,num(a.v?.[e[0]])); if(s==='s-ok') ok++; else if(s==='s-warn') w++; else if(s==='s-bad') b++ } return {ok,w,b} }
+function vICP(){
+  if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>🔬 Analisi ICP · Pro</h2><div class="small">Registra le analisi di laboratorio (Triton, ATI, Fauna Marin…), confrontale nel tempo e falle compilare all'assistente AI da una foto o dal PDF del referto. È una funzione del piano Pro.</div></div>`;
+  const L=icpList(); let h='';
+  if(icpEdit) return h+icpForm();
+  h+=`<div class="card"><div class="small mut">Valori di riferimento per acquari di barriera (Fauna Marin Lab). Ogni laboratorio usa range leggermente diversi: in caso di dubbio vale il referto.</div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="icpNew">+ Nuova analisi</button>${aiKey()?`<button class="btn sec" id="icpAi">✨ Compila da foto o PDF</button>`:''}</div>
+    <input type="file" id="icpFile" accept="image/*,application/pdf" multiple class="hide">${_icpBusy?`<div class="small mut" style="margin-top:8px">${esc(_icpBusy)}</div>`:''}</div>`;
+  if(!L.length) return h+`<div class="card small mut">Nessuna analisi registrata.</div>`;
+  const a=L.find(x=>x.id===icpOpen)||L[0], prev=L[L.indexOf(a)+1], c=icpCount(a);
+  h+=`<div class="card"><h2>Analisi</h2><div class="chips" style="margin:0">${L.map(x=>`<button class="chip ${x.id===a.id?'on':''}" data-icpo="${x.id}">${fdate(x.ts)}</button>`).join('')}</div>
+    <div class="small" style="margin-top:8px"><b>${fdate(a.ts,true)}</b> · ${esc(a.lab||'laboratorio')}${a.note?' · '+esc(a.note):''}</div>
+    <div class="small" style="margin-top:4px"><span style="color:#5fd49a">${c.ok} nel range</span> · <span style="color:#ffd166">${c.w} da tenere d'occhio</span> · <span style="color:#ff7b7b">${c.b} fuori range</span>${prev?` · confronto con ${fdate(prev.ts)}`:''}</div>
+    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-icped="${a.id}">✎ Modifica</button><button class="btn sm sec" id="icpCopy" data-id="${a.id}">Copia nei test</button>${aiKey()?`<button class="btn sm" id="icpComment" data-id="${a.id}">✨ Commento AI</button>`:''}${delBtn('icp',a.id)}</div>
+    ${a.ai?`<div class="small" style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;white-space:pre-wrap">${esc(a.ai)}</div>`:''}</div>`;
+  for(const [g,gn,u] of ICP_GROUPS){ const els=ICP_EL.filter(e=>e[2]===g&&a.v&&a.v[e[0]]!=null&&a.v[e[0]]!==''); if(!els.length) continue;
+    h+=`<div class="card"><h2>${gn} <span class="tag" style="text-transform:none">${u}</span></h2><div class="list">`;
+    for(const e of els){ const v=num(a.v[e[0]]), pv=prev&&prev.v?num(prev.v[e[0]]):null, st=icpSt(e,v), d=pv!=null&&v!=null?v-pv:null;
+      h+=`<div class="it" data-icpel="${e[0]}" style="cursor:pointer;border-left:3px solid ${st==='s-ok'?'#5fd49a':st==='s-warn'?'#ffd166':'#ff7b7b'}"><div class="body"><b>${e[0]}</b> <span class="small mut">${e[1]}</span><div class="small mut">rif. ${icpRange(e)}</div></div>
+        <div style="text-align:right"><b>${v===0?'n.r.':fmt(v,v<1?3:v<10?2:0)}</b>${d!=null&&Math.abs(d)>1e-9?`<div class="small" style="color:var(--mut)">${d>0?'↑':'↓'} ${fmt(Math.abs(d),Math.abs(d)<1?3:1)}</div>`:''}</div></div>`;
+      if(icpEl===e[0]) h+=`<div style="height:170px;margin:4px 0 10px"><canvas id="icpChart"></canvas></div>` }
+    h+=`</div></div>` }
+  const xs=ICP_X.filter(([k])=>a.x&&num(a.x[k])!=null); if(xs.length) h+=`<div class="card"><h2>Altri valori del referto</h2><div class="small">${xs.map(([k,n,u])=>`${n}: <b>${fmt(num(a.x[k]),k==='po4'?3:1)}</b> ${u}`).join(' · ')}</div></div>`;
+  return h;
+}
+function icpForm(){
+  const x=icpEdit, labs=ICP_LABS.includes(x.lab)||!x.lab?x.lab||'Triton':'Altro';
+  let h=`<div class="card"><h2>${x.id?'Modifica analisi':'Nuova analisi ICP'}</h2>${x._ai?`<div class="small" style="color:var(--warn);margin-bottom:8px">Valori compilati dall'AI: controllali con il referto prima di salvare.</div>`:''}<form id="fIcp">
+    <div class="row"><div class="f"><label>Data del prelievo</label><input type="date" name="d" value="${toInput(x.ts||Date.now()).slice(0,10)}"></div><div class="f"><label>Laboratorio</label><select name="lab">${ICP_LABS.map(l=>`<option ${labs===l?'selected':''}>${l}</option>`).join('')}</select></div></div>
+    <div class="f ${labs==='Altro'?'':'hide'}" id="icpLabO" style="margin-top:8px"><label>Nome laboratorio</label><input name="labo" value="${labs==='Altro'?esc(x.lab||''):''}"></div>
+    <div class="f" style="margin-top:8px"><label>Nota (facolt.)</label><input name="note" value="${esc(x.note||'')}"></div>
+    <div class="small mut" style="margin:8px 0">Lascia vuoti gli elementi non presenti nel referto. Per «non rilevato» (n.d.) scrivi 0.</div>`;
+  for(const [g,gn,u] of ICP_GROUPS){ h+=`<div style="margin-top:10px"><b class="small">${gn} (${u})</b><div class="grid" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">`;
+    for(const e of ICP_EL.filter(e=>e[2]===g)){ const v=x.v&&x.v[e[0]]!=null?String(x.v[e[0]]).replace('.',','):''; h+=`<div class="f"><label title="${e[1]}">${e[0]} · ${e[1]}</label><input name="el_${e[0]}" inputmode="decimal" value="${v}"></div>` }
+    h+=`</div></div>` }
+  h+=`<div style="margin-top:10px"><b class="small">Altri valori (se nel referto)</b><div class="grid" style="grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">${ICP_X.map(([k,n,u])=>`<div class="f"><label>${n} (${u})</label><input name="x_${k}" inputmode="decimal" value="${x.x&&x.x[k]!=null?String(x.x[k]).replace('.',','):''}"></div>`).join('')}</div></div>
+    <div class="row" style="margin-top:12px"><button class="btn" type="submit">Salva analisi</button><button class="btn sec" type="button" id="icpCancel">Annulla</button></div></form></div>`;
+  return h;
+}
+const ICP_PROMPT=()=>`Leggi questo referto di analisi ICP dell'acqua di un acquario marino.
+Rispondi SOLO con un oggetto JSON, senza testo prima o dopo:
+{"date":"AAAA-MM-GG o null","lab":"nome del laboratorio o null","values":{"Na":10700},"extra":{"kh":null,"no3":null,"po4":null}}
+Chiavi ammesse in "values" e UNITÀ OBBLIGATORIE (converti se il referto usa altre unità):
+- in mg/L: ${ICP_EL.filter(e=>e[2]==='maj'||e[2]==='nut').map(e=>e[0]).join(', ')}
+- in µg/L: ${ICP_EL.filter(e=>e[2]==='tr'||e[2]==='pol').map(e=>e[0]).join(', ')}
+Esempi di conversione: iodio 0,065 mg/L = 65 µg/L; fosforo 60 µg/L = 0,06 mg/L; 1 ppm = 1 mg/L; 1 ppb = 1 µg/L.
+"n.d.", "non rilevato" o "< limite" = 0. Ometti gli elementi che non compaiono. "extra": kh in dKH, no3 e po4 in mg/L, solo se presenti.
+"date" è la data di prelievo (o di analisi se manca).`;
+async function icpFromFiles(files){
+  const content=[];
+  for(const f of files){ if(f.type==='application/pdf'){ const b64=await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(String(fr.result).split(',')[1]); fr.readAsDataURL(f) }); content.push({type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}) }
+    else{ const url=URL.createObjectURL(f); try{ const img=await loadImg(url); const b=await resizeTo(img,1800,0.88); const data=await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(String(fr.result).split(',')[1]); fr.readAsDataURL(b) }); content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data}}) } finally{ URL.revokeObjectURL(url) } } }
+  content.push({type:'text',text:ICP_PROMPT()});
+  const j=parseJSON(await aiText(content,'Sei un assistente che trascrive referti di laboratorio con precisione, senza inventare valori.',3000));
+  const v={}; for(const e of ICP_EL){ const n=num(j.values&&j.values[e[0]]); if(n!=null&&n>=0) v[e[0]]=n }
+  const x={}; for(const [k] of ICP_X){ const n=num(j.extra&&j.extra[k]); if(n!=null) x[k]=n }
+  if(!Object.keys(v).length) throw new Error('Non ho trovato valori ICP nel referto');
+  const ts=j.date&&isFinite(new Date(j.date+'T12:00'))?new Date(j.date+'T12:00').getTime():Date.now();
+  return {ts,lab:j.lab||'',v,x,_ai:true};
+}
+async function icpComment(a){
+  const L=icpList(), prev=L[L.indexOf(a)+1];
+  const row=e=>{ const v=num(a.v?.[e[0]]); if(v==null) return null; const pv=prev?num(prev.v?.[e[0]]):null; return `${e[0]} (${e[1]}): ${v} ${icpUnit(e[2])} · rif. ${icpRange(e)}${pv!=null?` · prima ${pv}`:''} · ${({'s-ok':'ok','s-warn':'attenzione','s-bad':'fuori range'})[icpSt(e,v)]}` };
+  const txt=ICP_EL.map(row).filter(Boolean).join('\n');
+  return aiText([{type:'text',text:`Analisi ICP del ${fdate(a.ts,true)} (${a.lab||'laboratorio'})${prev?`, confrontata con quella del ${fdate(prev.ts,true)}`:''}.\nVasca: ${volSet()?vol()+' L netti':'volume non indicato'}, dosaggio ${dmode()}.\n${txt}\n\nScrivi un commento in italiano, breve e pratico (massimo 12 righe): cosa va bene, cosa è fuori posto e perché può succedere, cosa verificare o correggere. Non indicare dosi precise di prodotti: suggerisci di seguire le indicazioni del produttore o del laboratorio. Niente tabelle, niente markdown.`}],aiSystem(),900);
+}
+function bindICP(){
+  const $=id=>document.getElementById(id);
+  if($('icpNew')) $('icpNew').onclick=()=>{ icpEdit={}; render(); window.scrollTo(0,0) };
+  if($('icpAi')) $('icpAi').onclick=()=>$('icpFile').click();
+  if($('icpFile')) $('icpFile').onchange=async e=>{ const files=[...e.target.files]; e.target.value=''; if(!files.length) return; _icpBusy='Leggo il referto…'; render();
+    try{ icpEdit=await icpFromFiles(files); _icpBusy=''; render(); window.scrollTo(0,0) }catch(err){ _icpBusy=''; toast(String(err.message||'Lettura non riuscita')); render() } };
+  document.querySelectorAll('[data-icpo]').forEach(b=>b.onclick=()=>{ icpOpen=b.dataset.icpo; icpEl=null; render() });
+  document.querySelectorAll('[data-icped]').forEach(b=>b.onclick=()=>{ icpEdit=clone((S.icp||[]).find(x=>x.id===b.dataset.icped)||{}); render(); window.scrollTo(0,0) });
+  document.querySelectorAll('[data-icpel]').forEach(b=>b.onclick=()=>{ icpEl=icpEl===b.dataset.icpel?null:b.dataset.icpel; render() });
+  if($('icpCancel')) $('icpCancel').onclick=()=>{ icpEdit=null; render() };
+  const ls=document.querySelector('#fIcp select[name=lab]'); if(ls) ls.addEventListener('change',()=>$('icpLabO').classList.toggle('hide',ls.value!=='Altro'));
+  if($('fIcp')) $('fIcp').onsubmit=async e=>{ e.preventDefault(); const o=formVals($('fIcp')); const v={}, x={};
+    for(const el of ICP_EL){ const raw=(o['el_'+el[0]]||'').trim(); if(raw==='') continue; const n=/^n\.?\s*[dr]\.?$/i.test(raw)?0:num(raw); if(n!=null&&n>=0) v[el[0]]=n }
+    for(const [k] of ICP_X){ const n=num(o['x_'+k]); if(n!=null) x[k]=n }
+    if(!Object.keys(v).length){ toast('Inserisci almeno un valore'); return }
+    const it=Object.assign(clone(icpEdit),{id:icpEdit.id||uid(),ts:o.d?new Date(o.d+'T12:00').getTime():Date.now(),lab:o.lab==='Altro'?(o.labo||'').trim()||'Altro':o.lab,note:(o.note||'').trim(),v,x}); delete it._ai;
+    if(await saveItem('icp',it)){ icpEdit=null; icpOpen=it.id; toast('Analisi salvata'); render() } };
+  if($('icpCopy')) $('icpCopy').onclick=async()=>{ const a=(S.icp||[]).find(x=>x.id===$('icpCopy').dataset.id); if(!a) return; const v={};
+    if(num(a.v?.Ca)) v.ca=num(a.v.Ca); if(num(a.v?.Mg)) v.mg=num(a.v.Mg); if(num(a.v?.K)) v.k=num(a.v.K); if(num(a.x?.kh)) v.kh=num(a.x.kh); if(num(a.x?.no3)!=null&&a.x?.no3!=null) v.no3=num(a.x.no3); if(a.x?.po4!=null&&num(a.x.po4)!=null) v.po4=num(a.x.po4);
+    for(const k of Object.keys(v)) if(!P[k]) delete v[k];
+    if(!Object.keys(v).length){ toast('Nessun valore da copiare'); return }
+    if(await saveItem('tests',{id:uid(),ts:a.ts,v,note:`Da analisi ICP ${a.lab||''}`.trim()})) toast(`Copiati nei test: ${Object.keys(v).map(k=>P[k].n).join(', ')}`) };
+  if($('icpComment')) $('icpComment').onclick=async()=>{ const a=(S.icp||[]).find(x=>x.id===$('icpComment').dataset.id); if(!a) return; const b=$('icpComment'); b.disabled=true; b.textContent='Analizzo…';
+    try{ const t=await icpComment(a); await saveItem('icp',Object.assign(clone(a),{ai:t})); toast('Commento pronto') }catch(err){ toast(String(err.message||'Commento non riuscito')) } render() };
+  const cv=$('icpChart'); if(cv&&icpEl&&window.Chart){ const e=ICP_EL.find(x=>x[0]===icpEl); const pts=icpList().filter(a=>a.v&&num(a.v[icpEl])!=null).map(a=>({x:a.ts,y:num(a.v[icpEl])})).sort((a,b)=>a.x-b.x);
+    chartDefaults(); const [,,,lo,,hi]=e; const x0=pts.length?pts[0].x-15*DAY:Date.now()-60*DAY, x1=pts.length?pts[pts.length-1].x+15*DAY:Date.now();
+    if(charts.icp) charts.icp.destroy();
+    charts.icp=new Chart(cv,{type:'line',data:{datasets:[{data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:4,tension:.2},{data:[{x:x0,y:lo},{x:x1,y:lo}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1},{data:[{x:x0,y:hi},{x:x1,y:hi}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1,fill:'-1',backgroundColor:'rgba(63,169,108,.1)'}]},
+      options:{animation:false,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0}},scales:{x:xTime(x0,x1),y:{grid:{color:'#1f3a4a'}}}}}) }
+}
+
 /* ---------- Scorte e consumabili ---------- */
 const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
 const STOCK_UNITS=['pz','ml','L','g','kg','mg'];
@@ -814,6 +974,7 @@ function stockUsed(it,t1,t2){
   }
   if(it.type==='salt'){ const g=num(it.saltGL)||36; for(const ev of S.events) if(ev.type==='wc'&&ev.ts>t1&&ev.ts<=t2) u+=(num(ev.liters)||0)*g/1000; return u }
   if(it.type==='reagent'){ for(const t of S.tests) if(t.ts>t1&&t.ts<=t2&&num(t.v?.[it.param])!=null) u++; return u }
+  if(it.type==='other'&&it.task==='feed') return feedUsed(it,t1,t2);
   if(it.type==='other'&&it.task&&num(it.per)){ const tk=S.tasks.find(x=>x.id===it.task); for(const ev of S.events) if(ev.type==='maint'&&ev.ts>t1&&ev.ts<=t2&&(ev.task===it.task||(!ev.task&&tk&&ev.note===tk.name))) u+=num(it.per); return u }
   return 0;
 }
@@ -836,9 +997,10 @@ function vScorte(){
     const i=stockInfo(it), u=stU(it), pct=num(it.size)?Math.min(100,100*i.rem/num(it.size)):null;
     const col=i.days==null?'var(--mut)':i.days<7?'var(--bad)':i.days<21?'var(--warn)':'var(--ok)';
     h+=`<div class="card"><div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div><b>${esc(it.name)}</b> <span class="tag">${(STOCK_T[it.type]||STOCK_T.other)[0]}${it.type==='reagent'&&P[it.param]?' · '+P[it.param].n:''}</span></div><div class="acts"><button class="btn sm sec" data-stedit="${it.id}">✎</button>${delBtn('stock',it.id)}</div></div>
-      <div class="row" style="margin-top:6px;gap:16px"><div><span class="big">${fmt(i.rem,u==='kg'||u==='L'?2:0)}</span> <small class="mut">${u} rimasti</small></div>${i.days!=null?`<div style="color:${col}"><b>≈ ${fmt(i.days,0)} giorni</b><div class="small mut">${fmt(i.rate,u==='kg'||u==='L'?3:1)} ${u}/giorno</div></div>`:'<div class="small mut">durata non stimabile</div>'}</div>
+      <div class="row" style="margin-top:6px;gap:16px"><div><span class="big">${fmt(i.rem,u==='kg'||u==='L'?2:Math.abs(i.rem-Math.round(i.rem))>0.04?1:0)}</span> <small class="mut">${u} rimasti</small></div>${i.days!=null?`<div style="color:${col}"><b>≈ ${fmt(i.days,0)} giorni</b><div class="small mut">${fmt(i.rate,u==='kg'||u==='L'?3:1)} ${u}/giorno</div></div>`:'<div class="small mut">durata non stimabile</div>'}</div>
       ${pct!=null?`<div style="height:6px;background:#0a1a24;border-radius:4px;margin-top:8px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${col}"></div></div>`:''}
       ${i.expDays!=null?`<div class="small" style="margin-top:6px;color:${i.expDays<0?'var(--bad)':i.expDays<30?'var(--warn)':'var(--mut)'}">${i.expDays<0?'Scaduto':'Scade'} il ${fdate(num(it.expiry),true)}</div>`:''}
+      ${it.type==='other'&&it.task==='feed'?`<div class="small mut" style="margin-top:6px">Scende con i pasti registrati come «${esc(it.name)}»</div>`:''}
       ${it.type==='other'&&it.task&&S.tasks.find(x=>x.id===it.task)?`<div class="small mut" style="margin-top:6px">−${fmt(num(it.per),u==='kg'||u==='L'?2:0)} ${u} a ogni «${esc(S.tasks.find(x=>x.id===it.task).name)}» (${cadence(S.tasks.find(x=>x.id===it.task))})</div>`:''}
       ${stockUse===it.id?`<form class="row" data-stuseform="${it.id}" style="margin-top:8px"><div class="f"><label>Quantità usata (${u})</label><input name="q" inputmode="decimal" autofocus></div><button class="btn sm" type="submit" style="align-self:flex-end">OK</button><button class="btn sm sec" type="button" data-stusecancel style="align-self:flex-end">Annulla</button></form>`:''}
       <div class="row" style="margin-top:8px"><button class="btn sm sec" data-strefill="${it.id}">Nuova confezione</button>${it.type==='other'&&stockUse!==it.id?`<button class="btn sm sec" data-stuse="${it.id}">Ho usato…</button>`:''}</div></div>`;
@@ -857,8 +1019,8 @@ function stockForm(){
       <div class="f ${t==='other'?'':'hide'}" id="stUnitBox"><label>Unità di misura</label><select name="unit" id="stUnit">${STOCK_UNITS.map(u=>`<option value="${u}" ${stU({type:'other',unit:x.unit})===u?'selected':''}>${u}</option>`).join('')}</select></div>
       <div class="f ${t==='reagent'?'':'hide'}" id="stParam"><label>Test di</label><select name="param">${Object.keys(P).map(p=>`<option value="${p}" ${x.param===p?'selected':''}>${P[p].n}</option>`).join('')}</select></div>
       <div class="f ${t==='salt'?'':'hide'}" id="stSalt"><label>Grammi per litro</label><input name="saltGL" inputmode="decimal" value="${esc(String(x.saltGL||36).replace('.',','))}"></div></div>
-    <div id="stLink" class="${t==='other'?'':'hide'}" style="margin-top:8px"><div class="row"><div class="f" style="flex:2"><label>Si consuma con</label><select name="task" id="stTask"><option value="">Nessuna manutenzione (aggiorno a mano)</option>${S.tasks.map(k=>`<option value="${k.id}" ${x.task===k.id?'selected':''}>${esc(k.name)} · ${cadence(k)}</option>`).join('')}<option value="new">＋ Nuova manutenzione…</option></select></div>
-      <div class="f ${x.task?'':'hide'}" id="stPerBox"><label>Usati ogni volta</label><input name="per" inputmode="decimal" value="${num(x.per)!=null?String(x.per).replace('.',','):''}"></div></div>
+    <div id="stLink" class="${t==='other'?'':'hide'}" style="margin-top:8px"><div class="row"><div class="f" style="flex:2"><label>Si consuma con</label><select name="task" id="stTask"><option value="">Nessuna manutenzione (aggiorno a mano)</option>${S.tasks.map(k=>`<option value="${k.id}" ${x.task===k.id?'selected':''}>${esc(k.name)} · ${cadence(k)}</option>`).join('')}<option value="feed" ${x.task==='feed'?'selected':''}>🍤 Alimentazione (pasti con lo stesso nome)</option><option value="new">＋ Nuova manutenzione…</option></select></div>
+      <div class="f ${x.task&&x.task!=='feed'?'':'hide'}" id="stPerBox"><label>Usati ogni volta</label><input name="per" inputmode="decimal" value="${num(x.per)!=null?String(x.per).replace('.',','):''}"></div></div>
       <div class="row hide" id="stNewTask" style="margin-top:8px"><div class="f" style="flex:2"><label>Nome manutenzione</label><input name="tname" placeholder="es. Cambio carbone"></div><div class="f"><label>Ogni (giorni)</label><input name="tevery" inputmode="numeric" value="30"></div></div>
       <div class="small mut" style="margin-top:4px">Quando segni come fatta la manutenzione, la quantità scende da sola.</div></div>
     <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button><button class="btn sec" type="button" id="stCancel">Annulla</button></div></form></div>`;
@@ -914,11 +1076,11 @@ function bindStockGear(){
     await saveItem('stock',Object.assign(clone(it),{qty:num(it.size),setTs:Date.now()})); if(num(it.price)>0){ await addExpense({cat:STOCK_EXP[it.type]||'cons',desc:it.name,amount:num(it.price),src:'stock'}); toast(`Nuova confezione registrata · ${euro(num(it.price))} nelle Spese`) } else toast('Nuova confezione registrata'); render() });
   const f=document.getElementById('fSt');
   if(f){ const ty=document.getElementById('stType'); const un=document.getElementById('stUnit'); un.onchange=()=>{ document.getElementById('stU').textContent=un.value }; ty.onchange=()=>{ document.getElementById('stU').textContent=stU({type:ty.value,unit:un.value}); document.getElementById('stUnitBox').classList.toggle('hide',ty.value!=='other'); document.getElementById('stLink').classList.toggle('hide',ty.value!=='other'); document.getElementById('stParam').classList.toggle('hide',ty.value!=='reagent'); document.getElementById('stSalt').classList.toggle('hide',ty.value!=='salt') };
-    const tsel=document.getElementById('stTask'); tsel.onchange=()=>{ document.getElementById('stPerBox').classList.toggle('hide',!tsel.value); document.getElementById('stNewTask').classList.toggle('hide',tsel.value!=='new') };
+    const tsel=document.getElementById('stTask'); tsel.onchange=()=>{ document.getElementById('stPerBox').classList.toggle('hide',!tsel.value||tsel.value==='feed'); document.getElementById('stNewTask').classList.toggle('hide',tsel.value!=='new') };
     document.getElementById('stCancel').onclick=()=>{ stockEdit=null; render() };
     f.onsubmit=async e=>{ e.preventDefault(); const o=formVals(f); if(!(o.name||'').trim()){ toast('Inserisci il nome'); return } const q=num(o.qty); if(q==null){ toast('Indica la quantità attuale'); return }
-      let task=o.type==='other'?(o.task||null):null, per=task?num(o.per):null;
-      if(task&&!(per>0)){ toast('Indica quanto ne usi ogni volta'); return }
+      let task=o.type==='other'?(o.task||null):null, per=task&&task!=='feed'?num(o.per):null;
+      if(task&&task!=='feed'&&!(per>0)){ toast('Indica quanto ne usi ogni volta'); return }
       if(task==='new'){ const ev=Math.max(1,Math.round(num(o.tevery)||0)); if(!(o.tname||'').trim()||!ev){ toast('Indica nome e giorni della manutenzione'); return }
         const nt={id:uid(),name:o.tname.trim(),kind:'interval',every:ev}; if(!await saveItem('tasks',nt)) return; task=nt.id }
       const it=Object.assign(clone(stockEdit),{task,per,id:stockEdit.id||uid(),name:o.name.trim(),type:o.type,qty:q,setTs:Date.now(),size:num(o.size),expiry:d2ts(o.expiry),param:o.type==='reagent'?o.param:null,saltGL:o.type==='salt'?num(o.saltGL)||36:null,unit:o.type==='other'?o.unit:null,price:num(o.price)});
@@ -941,7 +1103,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.10.1';
+const APP_VERSION='1.11.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -983,6 +1145,8 @@ function aiOverview(){
   const s=S.settings, si=startInfo(), now=Date.now(), reg=curReg(now), o=[];
   if(MULTI&&tanks().length>1) o.push(`Vasca: ${tankName()}.`);
   o.push(`Volume netto: ${volSet()?vol()+' L':'non impostato (chiedi all\'utente di impostarlo)'}.`);
+  { const F=(S.feeds||[]).filter(f=>f.ts>Date.now()-7*DAY); if(F.length){ const c={}; for(const f of F) c[f.food]=(c[f.food]||0)+1; o.push(`Alimentazione ultimi 7 giorni: ${F.length} pasti (${Object.entries(c).map(([k,v])=>k+' ×'+v).join(', ')}).`) } }
+  { const I=icpList()[0]; if(I){ const bad=ICP_EL.filter(e=>{ const st=icpSt(e,num(I.v?.[e[0]])); return st==='s-bad'||st==='s-warn' }).map(e=>`${e[0]} ${num(I.v[e[0]])} ${icpUnit(e[2])}`); o.push(`Ultima analisi ICP ${fdate(I.ts,true)} (${I.lab||''}): ${bad.length?'fuori range o da controllare: '+bad.join(', '):'tutti gli elementi misurati nel range'}.`) } }
   if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
   else o.push('Vasca già matura (nessun avvio in corso).');
   const m=dmode();
@@ -1312,6 +1476,10 @@ const GUIDE=[
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro;</li><li><b>Altro</b> (carbone, resine, calze filtranti…): scegli l'unità di misura (pz, ml, L, g, kg, mg) e, se vuoi, collega una manutenzione con la quantità usata ogni volta. Ad esempio carbone, 100 ml a ogni «Cambio carbone» ogni 30 giorni: quando segni il cambio come fatto, la scorta scende da sola. Se non lo colleghi, usa <b>Ho usato…</b> per scalare a mano.</li></ul>
   <p>Vedi quanto resta e per quanti giorni basta al ritmo attuale. Quando un prodotto sta finendo (meno di 7 giorni) o scade a breve, compare in Home tra le cose da fare. Con <b>Nuova confezione</b> riporti la quantità al pieno.</p>`},
  {id:'attrezzatura',i:'🔌',t:'Attrezzatura',b:`<p>In <b>Menu → Attrezzatura</b> tieni l'elenco degli apparecchi: tipo, marca e modello, data e prezzo d'acquisto, garanzia e note. Con <b>+ Manutenzione</b> colleghi all'apparecchio una scadenza che hai già (così non crei doppioni) oppure ne crei una nuova scegliendo ogni quanti giorni. Le scadenze collegate si modificano (✎) o si scollegano dalla scheda, e restano in Manutenzione; le notifiche si scelgono in Impostazioni → Notifiche.</p>`},
+ {id:'alimentazione',i:'🍤',t:'Alimentazione',b:`<p>In <b>Menu → Alimentazione</b> (o con il <b>+ → Pasto</b>) registri cosa dai da mangiare a pesci e coralli: quando, quale cibo, quanto. Spunta <b>Salva tra i preferiti</b> e il cibo diventa un pulsante: un tocco e il pasto è registrato.</p>
+  <p>Il riepilogo mostra quanti pasti hai dato in 7 e 30 giorni e i cibi più usati. Nei grafici dei parametri, il pulsante <b>🍤 Pasti</b> aggiunge un'icona per ogni pasto: utile se nitrati e fosfati salgono. Se tieni il cibo nelle <b>Scorte</b> (tipo Altro) con lo stesso nome, scegli «Si consuma con: Alimentazione» e la scorta scende da sola. Per un promemoria crea una voce in Manutenzioni.</p>`},
+ {id:'icp',i:'🔬',t:'Analisi ICP (Pro)',b:`<p>In <b>Menu → Analisi ICP</b> registri le analisi di laboratorio (Triton, ATI, Fauna Marin, Oceamo…). Con <b>✨ Compila da foto o PDF</b> l'assistente AI legge il referto e compila i valori: controllali e salva.</p>
+  <p>Ogni elemento è colorato rispetto ai valori di riferimento per acquari di barriera (fonte: Fauna Marin Lab) e mostra la variazione rispetto all'analisi precedente; toccalo per il grafico nel tempo. <b>✨ Commento AI</b> spiega cosa è fuori posto e cosa verificare; <b>Copia nei test</b> porta calcio, magnesio, potassio, KH, nitrati e fosfati nei test normali. Ogni laboratorio usa range leggermente diversi: in caso di dubbio vale il referto.</p>`},
  {id:'spese',i:'💶',t:'Spese',b:`<p>In <b>Menu → Spese</b> registri quanto spendi: data, importo, categoria (sale, integratori, animali e coralli, attrezzatura, test, cibo, consumabili, energia, altro) e una descrizione. In alto vedi il totale del mese, dell'anno o di sempre, la media mensile e la ripartizione per categoria.</p>
   <p>Alcune spese si aggiungono da sole: in <b>Scorte</b>, se indichi il prezzo della confezione, ogni <b>Nuova confezione</b> finisce nelle Spese; in <b>Attrezzatura</b>, un apparecchio nuovo con prezzo viene registrato alla data di acquisto. Puoi sempre correggerle o eliminarle.</p>`},
  {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Nei grafici dei parametri compaiono delle icone sulla linea del tempo: 💧 cambio d'acqua, 🧪 variazione di dosaggio, 🐠 inserimento di animali o coralli, 🔧 manutenzione, 💉 dose manuale, 📝 nota. Tocca un'icona per vedere data e dettagli.</p>
@@ -1332,7 +1500,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={alimentazione:'alimentazione',icp:'icp',spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -1955,7 +2123,7 @@ function vDosi(){
 
 function shownParams(){ return (S.settings.showParams||Object.keys(P)).filter(p=>P[p]) }
 function vGraf(){
-  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}<button class="chip ${chartEvOn()?'on':''}" id="evTog" title="Mostra cambi d'acqua, dosi, inserimenti e manutenzioni">📌 Eventi</button></div>${chartEvOn()?'<div class="small mut" style="margin-top:6px">💧 cambio acqua · 🧪 dosaggio · 🐠 inserimento · 🔧 manutenzione · tocca un\'icona per i dettagli</div>':''}</div>`;
+  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}<button class="chip ${chartEvOn()?'on':''}" id="evTog" title="Mostra cambi d'acqua, dosi, inserimenti e manutenzioni">📌 Eventi</button>${chartEvOn()?`<button class="chip ${lsGet('reeflog.chartFeed')==='1'?'on':''}" id="evFeed">🍤 Pasti</button>`:''}</div>${chartEvOn()?`<div class="small mut" style="margin-top:6px">💧 cambio acqua · 🧪 dosaggio · 🐠 inserimento · 🔧 manutenzione${lsGet('reeflog.chartFeed')==='1'?' · 🍤 pasto':''} · tocca un'icona per i dettagli</div>`:''}</div>`;
   const ps=shownParams();
   if(!ps.length) h+=`<div class="card mut">Nessun parametro selezionato: spuntali in Impostazioni → Range obiettivo.</div>`;
   for(const p of ps){ const n=testsWith(p).length;
@@ -2173,7 +2341,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={alimentazione:'Alimentazione',icp:'Analisi ICP',spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -2193,6 +2361,8 @@ const VIEWS={
   pdf:()=>backBar()+vPDF(),
   homecfg:vHomeCfg,
   spese:()=>backBar()+vSpese(),
+  alimentazione:()=>backBar()+vFeed(),
+  icp:()=>backBar()+vICP(),
   attrezzatura:()=>backBar()+vGear(),
   report:()=>backBar()+vReport(),
 };
@@ -2205,7 +2375,7 @@ function parseHash(){
 function applyRoute(){
   const [v,sb]=parseHash(); const changed=(v!==view||sb!==sub);
   view=v; sub=sb; confirmKey=null; if(sb) lastSub[v]=sb;
-  if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; expEdit=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
+  if(changed){ if(!(v==='param'&&sb==='nuovo')) editTest=null; expEdit=null; feedEdit=null; if(v!=='icp') icpEdit=null; icpEl=null; doneOpen=null; editTask=null; photoSel=null; stockEdit=null; gearEdit=null; gearTaskFor=null; if(v!=='vasca'){ lvEdit=null; lvPendingPhoto=null } }
   const tab= v==='home'||v==='homecfg'?'home': v==='param'?'param': v==='vasca'?'vasca':'menu';
   document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.v===tab));
   closeSheet(); render(); if(changed) window.scrollTo(0,0);
@@ -2230,6 +2400,8 @@ function vMenu(){
     ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
     ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
     ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
+    ['alimentazione','🍤','Alimentazione','pasti di pesci e coralli, cibi preferiti'],
+    ['icp','🔬','Analisi ICP',isPro()?'analisi di laboratorio, confronto nel tempo':'funzione Pro'],
     ['spese','💶','Spese','quanto spendi in sale, integratori, animali, attrezzatura'],
     ['pdf','📄','Report PDF','documento con valori, grafici e storico da condividere'],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
@@ -2240,7 +2412,7 @@ function vMenu(){
 let evPreset=null;
 function openSheet(){
   const el=document.getElementById('sheet');
-  const A=[['test','🧪','Test'],['dose','💧','Dose'],['wc','🔄','Cambio acqua'],['tds','🚰','TDS'],['photo','📷','Foto'],['lv','🐠','Animale'],['maint','🔧','Manutenz.'],['note','📝','Nota']];
+  const A=[['test','🧪','Test'],['dose','💧','Dose'],['wc','🔄','Cambio acqua'],['feed','🍤','Pasto'],['tds','🚰','TDS'],['photo','📷','Foto'],['lv','🐠','Animale'],['maint','🔧','Manutenz.'],['exp','💶','Spesa'],['note','📝','Nota'],...(isPro()?[['icp','🔬','ICP']]:[])];
   el.innerHTML=`<div class="pane"><div class="row" style="justify-content:space-between;margin-bottom:12px"><b>Aggiungi</b><button class="btn sm sec" id="shX">✕</button></div><div class="acts">${A.map(([k,i,l])=>`<button data-qa="${k}"><i>${i}</i>${l}</button>`).join('')}</div></div>`;
   el.classList.remove('hide');
   el.onclick=e=>{ if(e.target===el) closeSheet() };
@@ -2253,6 +2425,9 @@ function openSheet(){
     else if(k==='photo') document.getElementById('photoIn').click();
     else if(k==='lv'){ go('vasca-animali'); setTimeout(()=>{ lvEdit={}; lvPendingPhoto=null; render() },60) }
     else if(k==='maint'){ go('manut') }
+    else if(k==='feed'){ go('alimentazione'); if(!foods().length) setTimeout(()=>{ feedEdit={}; render() },60) }
+    else if(k==='exp'){ go('spese'); setTimeout(()=>{ expEdit={}; render(); document.getElementById('fEx')?.scrollIntoView({block:'center'}) },60) }
+    else if(k==='icp'){ go('icp') }
     else { evPreset=k; go('diario') } });
 }
 function askExit(A){
@@ -2299,6 +2474,7 @@ function bind(){
   app.querySelectorAll('[data-sub]').forEach(b=>b.onclick=()=>go(view+'-'+b.dataset.sub));
   app.querySelectorAll('[data-gr]').forEach(b=>b.onclick=()=>{grafRange=+b.dataset.gr;render()});
   const evt=document.getElementById('evTog'); if(evt) evt.onclick=()=>{ lsSet('reeflog.chartEv',chartEvOn()?'0':'1'); render() };
+  const evf=document.getElementById('evFeed'); if(evf) evf.onclick=()=>{ lsSet('reeflog.chartFeed',lsGet('reeflog.chartFeed')==='1'?'0':'1'); render() };
   app.querySelectorAll('[data-ask]').forEach(b=>b.onclick=()=>{confirmKey=b.dataset.ask;render();setTimeout(()=>{if(confirmKey===b.dataset.ask){confirmKey=null;render()}},4000)});
   app.querySelectorAll('[data-del]').forEach(b=>b.onclick=async()=>{const [c,id]=b.dataset.del.split(':');confirmKey=null;await delItem(c,id);toast('Eliminato');render()});
   app.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ const t=S.tests.find(x=>x.id===b.dataset.edit); if(!t) return; editTest=clone(t); if(view==='param'&&sub==='nuovo'){ render(); window.scrollTo(0,0) } else go('param-nuovo') });
@@ -2331,7 +2507,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg(); bindSpese();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
   if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
