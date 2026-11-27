@@ -31,7 +31,8 @@ jobs:
 
       - name: Codice nativo (Google Drive e widget)
         run: |
-          cp native/*.java android/app/src/main/java/it/reeflog/app/
+          PKG=android/app/src/main/java/$(node -p "require('./capacitor.config.json').appId.replace(/\./g,'/')")
+          mkdir -p $PKG && cp native/*.java $PKG/ && ls $PKG
           python3 native/patch_manifest.py > /dev/null
           grep -n "ReefWidgetProvider\|backup_rules" android/app/src/main/AndroidManifest.xml
 
@@ -74,10 +75,10 @@ jobs:
 
       - name: Rinomina e mostra la firma
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk ReefLog.apk
-          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner verify --print-certs ReefLog.apk | grep -i "SHA-256" || true
+          cp android/app/build/outputs/apk/debug/app-debug.apk ReefNova.apk
+          $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner verify --print-certs ReefNova.apk | grep -i "SHA-256" || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ReefLog-apk
-          path: ReefLog.apk
+          name: ReefNova-apk
+          path: ReefNova.apk
