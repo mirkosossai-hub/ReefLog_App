@@ -840,16 +840,18 @@ async function gdBackup(manual){
   try{
     if(S.mode==='local') lsSave();
     const tok=await gdToken(), files=await gdList(tok), byName=Object.fromEntries(files.map(f=>[f.name,f]));
+    if(byName['reeflog-data.json']&&!localHasData()) throw new Error(L('Questo telefono non ha ancora dati: il backup su Drive non è stato sovrascritto. Usa Ripristina.','This phone has no data yet: the Drive backup was not overwritten. Use Restore.'));
     const keys={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.startsWith('reeflog.')&&!GD_SKIP.test(k)) keys[k]=localStorage.getItem(k) }
     const all=await ptx('readonly',st=>st.getAll())||[]; const metas=all.map(p=>({id:p.id,ts:p.ts,note:p.note||'',thumb:p.thumb,lv:p.lv||null,tank:p.tank||'main'}));
     let up=0; for(const p of all){ const n='p_'+p.id+'.jpg'; if(byName[n]||!p.blob) continue; GD_msg=`Carico le foto (${++up})…`; if(view==='sync') render(); await gdUpload(tok,n,p.blob,'image/jpeg') }
-    const keep=new Set(all.map(p=>'p_'+p.id+'.jpg')); for(const f of files) if(/^p_.*\.jpg$/.test(f.name)&&!keep.has(f.name)) await gdFetch(tok,`${GD_API}/files/${f.id}`,{method:'DELETE'}).catch(()=>{});
+    const keep=new Set(all.map(p=>'p_'+p.id+'.jpg')); if(all.length) for(const f of files) if(/^p_.*\.jpg$/.test(f.name)&&!keep.has(f.name)) await gdFetch(tok,`${GD_API}/files/${f.id}`,{method:'DELETE'}).catch(()=>{});
     const data=JSON.stringify({app:'reeflog',kind:'drive',v:1,ver:APP_VERSION,ts:Date.now(),keys,photos:metas});
     await gdUpload(tok,'reeflog-data.json',new Blob([data],{type:'application/json'}),'application/json',byName['reeflog-data.json']&&byName['reeflog-data.json'].id);
     gdSet({last:Date.now(),size:data.length,nph:all.length,err:'',hash:gdHash()}); snoozeBackup(); GD_msg=''; if(manual) toast('Backup su Drive completato');
   }catch(e){ console.warn(e); gdSet({err:String(e.message||e)}); GD_msg=''; if(manual) toast(String(e.message||'Backup non riuscito')) }
   GD_busy=false; if(view==='sync') render();
 }
+function localHasData(){ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(!k||!/^reeflog\.v1(\.|$)/.test(k)) continue; try{ const j=JSON.parse(localStorage.getItem(k)||'null'); if(j&&COLLS.some(c=>(j[c]||[]).length)) return true }catch(e){} } return false }
 async function gdRestoreInfo(){ const tok=await gdToken(); const fs=await gdList(tok); const f=fs.find(x=>x.name==='reeflog-data.json'); return {tok,fs,f} }
 async function gdRestore(){
   if(GD_busy) return; GD_busy=true; GD_msg='Leggo il backup da Drive…'; render();
@@ -883,7 +885,7 @@ function vDrive(){
 function bindDrive(){
   const $=id=>document.getElementById(id);
   if($('gcidSave')) $('gcidSave').onclick=()=>{ const v=$('gcid').value.trim(); if(!/apps\.googleusercontent\.com$/.test(v)){ toast('ID non valido'); return } lsSet('reeflog.gcid',v); _slInit=false; render() };
-  if($('gdOn')) $('gdOn').onclick=async()=>{ GD_busy=true; GD_msg='Accesso a Google…'; render(); try{ await gdConnect(); GD_busy=false; GD_msg=''; render(); gdBackup(true) }catch(e){ console.warn(e); GD_busy=false; GD_msg=''; toast(/cancel/i.test(String(e&&e.message))?'Accesso annullato':String(e.message||'Accesso non riuscito')); render() } };
+  if($('gdOn')) $('gdOn').onclick=async()=>{ GD_busy=true; GD_msg='Accesso a Google…'; render(); try{ await gdConnect(); let rf=null; try{ rf=(await gdRestoreInfo()).f }catch(e){} GD_busy=false; GD_msg=''; if(rf){ gdSet({remote:rf.modifiedTime||''}); render(); toast(L('Su Drive c\'è già un backup: premi Ripristina per recuperarlo','There is already a backup on Drive: tap Restore to get it back')) } else { render(); gdBackup(true) } }catch(e){ console.warn(e); GD_busy=false; GD_msg=''; toast(/cancel/i.test(String(e&&e.message))?'Accesso annullato':String(e.message||'Accesso non riuscito')); render() } };
   if($('gdNow')) $('gdNow').onclick=()=>gdBackup(true);
   if($('gdAuto')) $('gdAuto').onchange=e=>{ gdSet({auto:e.target.checked}); toast(e.target.checked?'Backup automatico attivo':'Backup automatico disattivato') };
   if($('gdRest')) $('gdRest').onclick=async()=>{ const b=$('gdRest'); if(b.dataset.c!=='1'){ b.dataset.c='1'; b.textContent='Sostituisco i dati di questo telefono?'; return }
@@ -1269,7 +1271,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.15.0';
+const APP_VERSION='1.15.1';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
