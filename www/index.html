@@ -643,7 +643,7 @@ function bindPDF(){
 // ID client "Applicazione web" del progetto Google Cloud di Reef Log (non è un segreto)
 const GDRIVE_CLIENT='614386911434-t3jbfeuinrf359q9mkdkg22avies7i1g.apps.googleusercontent.com';
 const GD_SCOPE='https://www.googleapis.com/auth/drive.appdata', GD_API='https://www.googleapis.com/drive/v3', GD_UP='https://www.googleapis.com/upload/drive/v3';
-const GD_SKIP=/^reeflog\.(aikey|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget)/;
+const GD_SKIP=/^reeflog\.(aikey|aicode|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget)/;
 let GD_busy=false, GD_msg='', _slInit=false;
 function gdCfg(){ try{ return JSON.parse(lsGet('reeflog.gdrive')||'null')||{} }catch(e){ return {} } }
 function gdSet(o){ lsSet('reeflog.gdrive',JSON.stringify(Object.assign(gdCfg(),o))) }
@@ -870,14 +870,14 @@ function vICP(){
   const L=icpList(); let h='';
   if(icpEdit) return h+icpForm();
   h+=`<div class="card"><div class="small mut">Valori di riferimento per acquari di barriera (Fauna Marin Lab). Ogni laboratorio usa range leggermente diversi: in caso di dubbio vale il referto.</div>
-    <div class="row" style="margin-top:10px"><button class="btn" id="icpNew">+ Nuova analisi</button>${aiKey()?`<button class="btn sec" id="icpAi">✨ Compila da foto o PDF</button>`:''}</div>
+    <div class="row" style="margin-top:10px"><button class="btn" id="icpNew">+ Nuova analisi</button>${aiReady()?`<button class="btn sec" id="icpAi">✨ Compila da foto o PDF</button>`:''}</div>
     <input type="file" id="icpFile" accept="image/*,application/pdf" multiple class="hide">${_icpBusy?`<div class="small mut" style="margin-top:8px">${esc(_icpBusy)}</div>`:''}</div>`;
   if(!L.length) return h+`<div class="card small mut">Nessuna analisi registrata.</div>`;
   const a=L.find(x=>x.id===icpOpen)||L[0], prev=L[L.indexOf(a)+1], c=icpCount(a);
   h+=`<div class="card"><h2>Analisi</h2><div class="chips" style="margin:0">${L.map(x=>`<button class="chip ${x.id===a.id?'on':''}" data-icpo="${x.id}">${fdate(x.ts)}</button>`).join('')}</div>
     <div class="small" style="margin-top:8px"><b>${fdate(a.ts,true)}</b> · ${esc(a.lab||'laboratorio')}${a.note?' · '+esc(a.note):''}</div>
     <div class="small" style="margin-top:4px"><span style="color:#5fd49a">${c.ok} nel range</span> · <span style="color:#ffd166">${c.w} da tenere d'occhio</span> · <span style="color:#ff7b7b">${c.b} fuori range</span>${prev?` · confronto con ${fdate(prev.ts)}`:''}</div>
-    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-icped="${a.id}">✎ Modifica</button><button class="btn sm sec" id="icpCopy" data-id="${a.id}">Copia nei test</button>${aiKey()?`<button class="btn sm" id="icpComment" data-id="${a.id}">✨ Commento AI</button>`:''}${delBtn('icp',a.id)}</div>
+    <div class="row" style="margin-top:8px"><button class="btn sm sec" data-icped="${a.id}">✎ Modifica</button><button class="btn sm sec" id="icpCopy" data-id="${a.id}">Copia nei test</button>${aiReady()?`<button class="btn sm" id="icpComment" data-id="${a.id}">✨ Commento AI</button>`:''}${delBtn('icp',a.id)}</div>
     ${a.ai?`<div class="small" style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:10px;white-space:pre-wrap">${esc(a.ai)}</div>`:''}</div>`;
   for(const [g,gn,u] of ICP_GROUPS){ const els=ICP_EL.filter(e=>e[2]===g&&a.v&&a.v[e[0]]!=null&&a.v[e[0]]!==''); if(!els.length) continue;
     h+=`<div class="card"><h2>${gn} <span class="tag" style="text-transform:none">${u}</span></h2><div class="list">`;
@@ -1106,7 +1106,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.12.0';
+const APP_VERSION='1.13.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1118,6 +1118,10 @@ function devMode(){ return lsGet('reeflog.dev')==='1' }
 function isPro(){ return lsGet('reeflog.pro')==='1' }
 function aiCfg(){ let c={}; try{ c=JSON.parse(lsGet('reeflog.aicfg')||'{}')||{} }catch(e){} return Object.assign({provider:'anthropic',model:''},c) }
 function aiKey(){ return lsGet('reeflog.aikey')||'' }
+// accesso all'AI: codice di accesso (passa dal server Reef Log) oppure, solo per lo sviluppatore, chiave personale
+function aiCode(){ return (lsGet('reeflog.aicode')||'').trim().toUpperCase() }
+function aiReady(){ return !!(aiKey()||aiCode()) }
+function aiProxyUrl(){ return SB_URL+'/functions/v1/ai-proxy' }
 function aiModel(){ const c=aiCfg(); return c.model||AI_PROVIDERS[c.provider].model }
 function aiUsage(){ try{ return JSON.parse(lsGet('reeflog.aiusage')||'{"in":0,"out":0,"n":0}') }catch(e){ return {in:0,out:0,n:0} } }
 function aiCost(u){ const p=AI_PROVIDERS[aiCfg().provider].price; return (u.in*p[0]+u.out*p[1])/1e6 }
@@ -1211,16 +1215,19 @@ async function aiDoAction(name,i){
   return 'Azione sconosciuta.';
 }
 async function aiCall(msgs,opt={}){
-  const c=aiCfg(), key=aiKey(); if(!key) throw new Error('Manca la chiave API: inseriscila in Impostazioni → Assistente AI.');
+  const c=aiCfg(), key=aiKey(), code=aiCode(); if(!key&&!code) throw new Error('Manca il codice di accesso: inseriscilo in Impostazioni → Assistente AI.');
   if(c.provider!=='anthropic') throw new Error('Fornitore non supportato.');
+  const payload=JSON.stringify(Object.assign({model:aiModel(),max_tokens:opt.max||2048,system:opt.system||aiSystem(),messages:msgs},opt.noTools?{}:{tools:AI_TOOLS}));
   let r,j;
-  try{ r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify(Object.assign({model:aiModel(),max_tokens:opt.max||2048,system:opt.system||aiSystem(),messages:msgs},opt.noTools?{}:{tools:AI_TOOLS}))}) }
+  try{ r= key
+      ? await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:payload})
+      : await fetch(aiProxyUrl(),{method:'POST',headers:{'content-type':'application/json','x-reef-code':code},body:payload}) }
   catch(e){ throw new Error('Connessione assente o servizio non raggiungibile.') }
   try{ j=await r.json() }catch(e){ j=null }
   if(!r.ok){ const m=(j&&j.error&&j.error.message)||'';
-    if(r.status===401) throw new Error('Chiave API non valida.');
-    if(/credit/i.test(m)) throw new Error('Credito API esaurito: ricaricalo sulla console del fornitore.');
+    if(j&&j.error&&/^reef_/.test(j.error.type||'')) throw new Error(m);
+    if(r.status===401) throw new Error(key?'Chiave API non valida.':'Codice di accesso non valido o disattivato.');
+    if(/credit/i.test(m)) throw new Error(key?'Credito API esaurito: ricaricalo sulla console del fornitore.':'Il servizio AI è temporaneamente sospeso: riprova più tardi.');
     if(r.status===429) throw new Error('Troppe richieste ravvicinate: riprova tra poco.');
     if(r.status===529||/overload/i.test(m)) throw new Error('Il servizio è momentaneamente sovraccarico: riprova tra poco.');
     throw new Error('Errore '+r.status+(m?': '+m:'')) }
@@ -1274,7 +1281,7 @@ function vAI(){
     <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
 
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
-  if(!aiKey()) h+=`<div class="banner">Inserisci la chiave API in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
+  if(!aiReady()) h+=`<div class="banner">Inserisci il codice di accesso in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
   h+=`<div id="aiLog">`;
   if(!AI.msgs.length) h+=`<div class="card small"><b>Cosa posso chiederti?</b><div class="chips" style="margin-top:8px">${['Come sta andando la mia vasca?','Analizza i consumi della triade','Perché il KH scende?','Cosa devo controllare questa settimana?'].map(q=>`<button class="chip" data-aiq="${esc(q)}">${q}</button>`).join('')}</div></div>`;
   for(const m of AI.msgs){
@@ -1319,7 +1326,9 @@ function bindAI(){
   const dv=document.getElementById('verTap'); if(dv) dv.onclick=()=>{ dv._n=(dv._n||0)+1; if(dv._n>=7&&!devMode()){ lsSet('reeflog.dev','1'); toast('Modalità sviluppatore attivata'); render() } else if(dv._n>=3&&dv._n<7&&!devMode()) toast(`Ancora ${7-dv._n} tocchi`) };
   const pr=document.getElementById('aiPro'); if(pr) pr.onchange=async()=>{ const was=curTank(); lsSet('reeflog.pro',pr.checked?'1':null); if(!pr.checked&&was!=='main'){ try{ localStorage.setItem('reeflog.curTank','main') }catch(e){} lsLoad(); await loadPhotos(); aiLoad() } toast(pr.checked?'Pro attivo (sviluppatore)':'Pro disattivato'); render(); scheduleNotif() };
   const ky=document.getElementById('aiKeySave'); if(ky) ky.onclick=()=>{ const v=document.getElementById('aiKeyIn').value.trim(); lsSet('reeflog.aikey',v||null); const mdl=document.getElementById('aiModelIn').value.trim(); lsSet('reeflog.aicfg',JSON.stringify(Object.assign(aiCfg(),{model:mdl}))); toast(v?'Chiave salvata su questo dispositivo':'Chiave rimossa'); render() };
-  const kt=document.getElementById('aiKeyTest'); if(kt) kt.onclick=async()=>{ kt.disabled=true; kt.textContent='Verifica…'; try{ const key=document.getElementById('aiKeyIn').value.trim()||aiKey(); if(key&&key!==aiKey()) lsSet('reeflog.aikey',key); await aiCall([{role:'user',content:[{type:'text',text:'Rispondi solo: OK'}]}]); toast('Connessione riuscita ✓') }catch(e){ toast(e.message) } render() };
+  const cs=document.getElementById('aiCodeSave'); if(cs) cs.onclick=()=>{ const v=document.getElementById('aiCodeIn').value.trim().toUpperCase(); lsSet('reeflog.aicode',v||null); toast(v?'Codice salvato su questo dispositivo':'Codice rimosso'); render() };
+  const kd=document.getElementById('aiKeyDel'); if(kd) kd.onclick=()=>{ lsSet('reeflog.aikey',null); toast('Chiave personale rimossa: ora si usa il codice'); render() };
+  const kt=document.getElementById('aiKeyTest'); if(kt) kt.onclick=async()=>{ kt.disabled=true; kt.textContent='Verifica…'; try{ const ci=document.getElementById('aiCodeIn'); const cv=ci?ci.value.trim().toUpperCase():''; if(cv&&cv!==aiCode()) lsSet('reeflog.aicode',cv); const ki=document.getElementById('aiKeyIn'); const key=ki?ki.value.trim():''; if(key&&key!==aiKey()) lsSet('reeflog.aikey',key); await aiCall([{role:'user',content:[{type:'text',text:'Rispondi solo: OK'}]}]); toast('Connessione riuscita ✓') }catch(e){ toast(e.message) } render() };
   const ur=document.getElementById('aiUsageReset'); if(ur) ur.onclick=()=>{ lsSet('reeflog.aiusage',null); render() };
   const dx=document.getElementById('devOff'); if(dx) dx.onclick=()=>{ lsSet('reeflog.dev',null); lsSet('reeflog.pro',null); toast('Modalità sviluppatore disattivata'); render() };
 }
@@ -1328,11 +1337,15 @@ function vAISettings(){
   const u=aiUsage(), k=aiKey();
   return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     ${devMode()?`<label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Pro attivo</b><br><span class="small mut">Modalità sviluppatore: in futuro lo attiverà l'abbonamento</span></span><input type="checkbox" id="aiPro" ${isPro()?'checked':''} style="width:22px;height:22px"></label><hr>`:''}
+    <div class="f"><label>Codice di accesso</label><input id="aiCodeIn" autocomplete="off" autocapitalize="characters" placeholder="es. MIRKO-7K4QX" value="${esc(aiCode())}"></div>
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="aiCodeSave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
+    <div class="small mut" style="margin-top:6px">Il codice ti viene dato da Reef Log durante il test. Le richieste passano dal server di Reef Log: non serve un account del fornitore dell'AI.</div>
+    ${devMode()?`<hr><div class="small" style="margin-bottom:6px"><b>Sviluppatore</b> · chiave personale: se presente ha la precedenza sul codice e chiama il fornitore direttamente.</div>
     <div class="f"><label>Fornitore</label><select disabled><option>${AI_PROVIDERS[aiCfg().provider].name}</option></select></div>
-    <div class="f" style="margin-top:8px"><label>Modello</label><input id="aiModelIn" value="${esc(aiCfg().model||'')}" placeholder="${AI_PROVIDERS[aiCfg().provider].model}"></div>
+    <div class="f" style="margin-top:8px"><label>Modello (solo con chiave personale)</label><input id="aiModelIn" value="${esc(aiCfg().model||'')}" placeholder="${AI_PROVIDERS[aiCfg().provider].model}"></div>
     <div class="f" style="margin-top:8px"><label>Chiave API</label><input id="aiKeyIn" type="password" autocomplete="off" placeholder="${k?'••••••••'+esc(k.slice(-4)):'sk-ant-…'}"></div>
-    <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
-    <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>
+    <div class="row" style="margin-top:8px"><button class="btn sm" id="aiKeySave">Salva chiave</button>${k?'<button class="btn sm sec" id="aiKeyDel">Rimuovi chiave</button>':''}</div>
+    <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>`:''}
     <hr><label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Report settimanale automatico</b><br><span class="small mut">Un riepilogo AI della vasca ogni settimana (circa 0,002 $ a report). L'avviso si sceglie in Notifiche.</span></span><input type="checkbox" id="repOn" ${aiCfg().report?'checked':''} style="width:22px;height:22px;flex:none"></label>
     ${aiCfg().report?`<div class="f" style="margin-top:8px"><label>Giorno del report</label><select id="repDay">${['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'].map((d,i)=>`<option value="${i}" ${reportDay()===i?'selected':''}>${d}</option>`).join('')}</select></div>`:''}
     <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
@@ -1371,7 +1384,7 @@ function reportDay(){ const d=aiCfg().reportDay; return d==null?0:+d }
 function lastBoundary(){ const d=new Date(); d.setHours(0,0,0,0); while(d.getDay()!==reportDay()) d.setDate(d.getDate()-1); return d.getTime() }
 let _repBusy=false;
 async function makeReport(manual){
-  if(_repBusy) return; if(!aiKey()){ if(manual) toast('Manca la chiave API'); return }
+  if(_repBusy) return; if(!aiReady()){ if(manual) toast('Manca il codice di accesso'); return }
   _repBusy=true; if(manual) render();
   try{
     const data={test_ultimi_14_giorni:aiRead('get_tests',{days:14}),diario_ultimi_7_giorni:aiRead('get_events',{days:7}),dosi:aiRead('get_dosing_history',{days:30}),scadenze:aiRead('get_tasks',{}),consumi:Object.fromEntries(TRI.map(p=>[p,aiRead('get_consumption',{param:p})])),scorte:S.stock.map(it=>{ const i=stockInfo(it); return {nome:it.name,giorni_rimasti:i.days!=null?Math.round(i.days):null} })};
@@ -1384,7 +1397,7 @@ DATI: ${JSON.stringify(data)}`}],aiSystem(),1500);
   }catch(e){ if(manual) toast(e.message) }
   _repBusy=false; render();
 }
-function checkReport(){ if(!reportOn()||!aiKey()) return; const R=reports(), b=lastBoundary(); if(!R.length||R[0].ts<b) makeReport(false) }
+function checkReport(){ if(!reportOn()||!aiReady()) return; const R=reports(), b=lastBoundary(); if(!R.length||R[0].ts<b) makeReport(false) }
 function vReport(){
   const R=reports();
   let h=`<div class="card"><div class="row" style="justify-content:space-between"><span class="small mut">${reportOn()?`Automatico ogni ${['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][reportDay()]}`:'Report automatico disattivato'}</span><button class="btn sm" id="repNow" ${_repBusy?'disabled':''}>${_repBusy?'Genero…':'Genera ora'}</button></div></div>`;
@@ -1480,6 +1493,7 @@ const GUIDE=[
  {id:'ai',i:'✨',t:'Assistente AI (Pro)',b:`<p>L'assistente è una chat che <b>conosce la tua vasca</b>: legge test, consumi, dosi, cambi d'acqua, scadenze e animali, e risponde sui tuoi numeri. Lo apri da <b>Menu → Assistente AI</b>, dal riquadro del dosaggio in Home o da una foto aperta (<b>✨ Analizza</b>).</p>
   <ul><li>Domande libere, per esempio "Perché il KH scende?" o "Posso inserire un nuovo corallo?".</li><li><b>Foto</b>: allega una foto con 📷 per un parere su alghe, cyano, dinoflagellati o coralli. Una foto non basta per una diagnosi certa.</li><li><b>Azioni</b>: l'assistente può proporre di aggiungere una nota, una scadenza, un test letto da una foto o una nuova dose. Non fa nulla senza il tuo <b>Conferma</b>.</li></ul>
   <p><b>Altre funzioni Pro</b>: in Parametri → Nuovo test, <b>✨ Leggi da foto</b> compila il modulo dalla foto del display del checker, della provetta o di un referto (controlla sempre i valori prima di salvare). Nella scheda di un animale, <b>✨ Riconosci dalla foto</b> propone nome, specie e note di compatibilità. Il <b>report settimanale</b> si attiva in Impostazioni: ogni settimana, nel giorno scelto, all'apertura dell'app viene preparato un riepilogo che trovi in Home e in Menu.</p>
+  <p><b>Per attivarlo</b> inserisci il <b>codice di accesso</b> in Impostazioni → Assistente AI e premi <b>Prova connessione</b>. Ogni codice ha un numero massimo di richieste al giorno; se lo raggiungi, l'assistente torna disponibile il giorno dopo.</p>
   <p>Le risposte possono contenere errori: verifica sempre prima di intervenire. È una funzione del piano Pro; quando la usi, i dati della vasca vengono inviati al fornitore dell'AI solo per elaborare la risposta.</p>`},
  {id:'scorte',i:'📦',t:'Scorte e consumabili',b:`<p>In <b>Menu → Scorte e consumabili</b> registri i prodotti con la quantità attuale. L'app la fa scendere da sola:</p>
   <ul><li><b>All In One e Balling</b>: in base alle dosi registrate;</li><li><b>Sale</b>: in base ai litri dei cambi d'acqua (grammi per litro impostabili, predefinito 36);</li><li><b>Reagenti</b>: un test in meno per ogni misura di quel parametro;</li><li><b>Altro</b> (carbone, resine, calze filtranti…): scegli l'unità di misura (pz, ml, L, g, kg, mg) e, se vuoi, collega una manutenzione con la quantità usata ogni volta. Ad esempio carbone, 100 ml a ogni «Cambio carbone» ogni 30 giorni: quando segni il cambio come fatto, la scorta scende da sola. Se non lo colleghi, usa <b>Ho usato…</b> per scalare a mano.</li></ul>
@@ -2429,7 +2443,7 @@ function vMenu(){
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
     ['homecfg','🏠','Personalizza la Home','scegli e riordina i riquadri, foto della vasca'],
-    ['ai','✨','Assistente AI',isPro()?(aiKey()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
+    ['ai','✨','Assistente AI',isPro()?(aiReady()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
     ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
     ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
     ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
