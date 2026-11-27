@@ -746,19 +746,22 @@ function chartEvents(from,to){
   if(!chartEvOn()) return [];
   const out=[], inR=ts=>ts>=from&&ts<=to;
   for(const e of S.events){ if(!inR(e.ts)) continue;
-    if(e.type==='wc') out.push({ts:e.ts,i:'💧',c:'#2ec4d6',t:`Cambio acqua ${fmt(num(e.liters)||0,1)} L${e.note?' · '+e.note:''}`});
-    else if(e.type==='live') out.push({ts:e.ts,i:'🐠',c:'#f59e0b',t:e.note||'Inserimento in vasca'});
-    else if(e.type==='maint') out.push({ts:e.ts,i:'🔧',c:'#8aa7b6',t:e.note||'Manutenzione'});
-    else if(e.type==='dose') out.push({ts:e.ts,i:'💉',c:'#f472b6',t:'Dose manuale'+(e.note?' · '+e.note:'')});
-    else if(e.type==='note') out.push({ts:e.ts,i:'📝',c:'#cbd5e1',t:e.note||'Nota'}) }
-  if(lsGet('reeflog.chartFeed')==='1') for(const f of (S.feeds||[])) if(inR(f.ts)) out.push({ts:f.ts,i:'🍤',c:'#fb923c',t:`Pasto: ${f.food}${num(f.qty)?' '+fmt(num(f.qty),1)+' '+(f.unit||''):''} (${(FEED_WHO[f.who]||FEED_WHO.fish)[1].toLowerCase()})`});
-  const D=[...S.doses].sort(byTs); D.forEach((d,k)=>{ if(!inR(d.ts)) return; const p=D[k-1]; out.push({ts:d.ts,i:'🧪',c:'#a78bfa',t:`Dosaggio: ${p?doseTxt(p)+' → ':''}${doseTxt(d)}${d.note?' · '+d.note:''}`}) });
+    if(e.type==='wc') out.push({ts:e.ts,r:'all',i:'💧',c:'#2ec4d6',t:`Cambio acqua ${fmt(num(e.liters)||0,1)} L${e.note?' · '+e.note:''}`});
+    else if(e.type==='live') out.push({ts:e.ts,r:'nut',i:'🐠',c:'#f59e0b',t:e.note||'Inserimento in vasca'});
+    else if(e.type==='maint') out.push({ts:e.ts,r:'nut',i:'🔧',c:'#8aa7b6',t:e.note||'Manutenzione'});
+    else if(e.type==='dose') out.push({ts:e.ts,r:'tri',i:'💉',c:'#f472b6',t:'Dose manuale'+(e.note?' · '+e.note:'')});
+  }
+  if(lsGet('reeflog.chartFeed')==='1') for(const f of (S.feeds||[])) if(inR(f.ts)) out.push({ts:f.ts,r:'nut',i:'🍤',c:'#fb923c',t:`Pasto: ${f.food}${num(f.qty)?' '+fmt(num(f.qty),1)+' '+(f.unit||''):''} (${(FEED_WHO[f.who]||FEED_WHO.fish)[1].toLowerCase()})`});
+  const D=[...S.doses].sort(byTs); D.forEach((d,k)=>{ if(!inR(d.ts)) return; const p=D[k-1]; out.push({ts:d.ts,r:'tri',i:'🧪',c:'#a78bfa',t:`Dosaggio: ${p?doseTxt(p)+' → ':''}${doseTxt(d)}${d.note?' · '+d.note:''}`}) });
   return out.sort(byTs);
 }
-function evPlugin(L){ return {id:'evmarks',afterDatasetsDraw(ch){ if(!L.length) return; const {ctx,chartArea:a,scales:{x}}=ch; ctx.save(); ctx.font='14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='bottom'; const placed=[];
+// a quali parametri si riferisce ogni tipo di evento
+const EV_NUT=['no3','po4','no2','nh4'], EV_TRI=['kh','ca','mg'];
+function evFor(L,p){ return L.filter(m=>m.r==='all'||(m.r==='nut'&&EV_NUT.includes(p))||(m.r==='tri'&&EV_TRI.includes(p))).map(m=>Object.assign({},m)) }
+function evPlugin(L){ return {id:'evmarks',afterDatasetsDraw(ch){ if(!L.length) return; const {ctx,chartArea:a,scales:{x}}=ch; ctx.save(); ctx.font='14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='bottom'; const placed=[]; const top=a.top-2;
   for(const m of L){ const px=x.getPixelForValue(m.ts); m._x=null; if(px<a.left-1||px>a.right+1) continue;
     ctx.strokeStyle=m.c+'77'; ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(px,a.top); ctx.lineTo(px,a.bottom); ctx.stroke(); ctx.setLineDash([]);
-    let lv=0; while(placed.some(q=>q.l===lv&&Math.abs(q.x-px)<17)) lv++; placed.push({x:px,l:lv}); m._x=px; m._y=a.bottom-3-lv*17; ctx.fillText(m.i,px,m._y) }
+    let lv=0; while(placed.some(q=>q.l===lv&&Math.abs(q.x-px)<17)) lv++; placed.push({x:px,l:lv}); m._x=px; m._y=top-lv*17; ctx.fillText(m.i,px,m._y) }
   ctx.restore() }} }
 function evClick(L){ return (evt)=>{ let best=null,bd=1e9; for(const m of L){ if(m._x==null) continue; const d=Math.hypot(m._x-evt.x,(m._y-8)-evt.y); if(d<bd){ bd=d; best=m } } if(best&&bd<24) toast(`${best.i} ${fdate(best.ts,true)} · ${best.t}`) } }
 /* ---------- Spese ---------- */
@@ -1103,7 +1106,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.11.2';
+const APP_VERSION='1.11.4';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1123,8 +1126,10 @@ const AI={dec:{},msgs:[],busy:false,pendingImg:null,draft:'',confirm:null,error:
 function aiSuffix(){ const t=curTank(); return t==='main'?'':'.'+t }
 function aiLoad(){ try{ AI.msgs=JSON.parse(lsGet('reeflog.aichat'+aiSuffix())||'[]')||[] }catch(e){ AI.msgs=[] } try{ AI.dec=JSON.parse(lsGet('reeflog.aidec'+aiSuffix())||'{}')||{} }catch(e){ AI.dec={} } AI.confirm=null; AI.error=''; AI.pendingImg=null; AI.draft='' }
 aiLoad();
-function aiSave(){ // salva la conversazione senza le immagini (pesanti)
-  const light=AI.msgs.map(m=>({role:m.role,content:Array.isArray(m.content)?m.content.map(b=>b.type==='image'?{type:'text',text:'[foto allegata]'}:b):m.content}));
+// i blocchi di ragionamento ("thinking") valgono solo nel turno in cui nascono: nei turni successivi vanno tolti
+function noThink(m){ if(m.role!=='assistant'||!Array.isArray(m.content)) return m; const c=m.content.filter(b=>b.type!=='thinking'&&b.type!=='redacted_thinking'); return {role:m.role,content:c.length?c:[{type:'text',text:'…'}]} }
+function aiSave(){ // salva la conversazione senza le immagini (pesanti) e senza i blocchi di ragionamento
+  const light=AI.msgs.map(noThink).map(m=>({role:m.role,content:Array.isArray(m.content)?m.content.map(b=>b.type==='image'?{type:'text',text:'[foto allegata]'}:b):m.content}));
   lsSet('reeflog.aichat'+aiSuffix(),JSON.stringify(light.slice(-40))); lsSet('reeflog.aidec'+aiSuffix(),JSON.stringify(AI.dec||{}));
 }
 
@@ -1229,10 +1234,11 @@ async function aiSend(){
   const text=(AI.draft||'').trim(); if(AI.busy||(!text&&!AI.pendingImg)) return;
   const content=[]; if(AI.pendingImg) content.push({type:'image',source:{type:'base64',media_type:'image/jpeg',data:AI.pendingImg.data}});
   content.push({type:'text',text:text||'Analizza questa foto della vasca.'});
+  const turn0=AI.msgs.length;
   AI.msgs.push({role:'user',content,_img:AI.pendingImg?AI.pendingImg.thumb:null}); AI.pendingImg=null; AI.draft=''; AI.error=''; AI.busy=true; render();
   try{
     for(let step=0;step<8;step++){
-      const res=await aiCall(aiTrim(AI.msgs).map(m=>({role:m.role,content:m.content})));
+      const res=await aiCall(aiTrim(AI.msgs.map((m,i)=>i<turn0?noThink(m):m)).map(m=>({role:m.role,content:m.content})));
       AI.msgs.push({role:'assistant',content:res.content}); render();
       if(res.stop_reason!=='tool_use') break;
       const results=[];
@@ -1485,7 +1491,7 @@ const GUIDE=[
   <p>Ogni elemento è colorato rispetto ai valori di riferimento per acquari di barriera (fonte: Fauna Marin Lab) e mostra la variazione rispetto all'analisi precedente; toccalo per il grafico nel tempo. <b>✨ Commento AI</b> spiega cosa è fuori posto e cosa verificare; <b>Copia nei test</b> porta calcio, magnesio, potassio, KH, nitrati e fosfati nei test normali. Ogni laboratorio usa range leggermente diversi: in caso di dubbio vale il referto.</p>`},
  {id:'spese',i:'💶',t:'Spese',b:`<p>In <b>Menu → Spese</b> registri quanto spendi: data, importo, categoria (sale, integratori, animali e coralli, attrezzatura, test, cibo, consumabili, energia, altro) e una descrizione. In alto vedi il totale del mese, dell'anno o di sempre, la media mensile e la ripartizione per categoria.</p>
   <p>Alcune spese si aggiungono da sole: in <b>Scorte</b>, se indichi il prezzo della confezione, ogni <b>Nuova confezione</b> finisce nelle Spese; in <b>Attrezzatura</b>, un apparecchio nuovo con prezzo viene registrato alla data di acquisto. Puoi sempre correggerle o eliminarle.</p>`},
- {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Nei grafici dei parametri compaiono delle icone sulla linea del tempo: 💧 cambio d'acqua, 🧪 variazione di dosaggio, 🐠 inserimento di animali o coralli, 🔧 manutenzione, 💉 dose manuale, 📝 nota. Tocca un'icona per vedere data e dettagli.</p>
+ {id:'eventi',i:'📌',t:'Eventi sui grafici',b:`<p>Sopra i grafici dei parametri compaiono delle icone sulla linea del tempo, solo dove c'entrano: 💧 cambio d'acqua su tutti i parametri; 🧪 variazione di dosaggio e 💉 dose manuale su KH, calcio e magnesio; 🐠 inserimento di animali o coralli, 🔧 manutenzione e 🍤 pasti su nitrati, fosfati, nitriti e ammoniaca. Le note del diario non compaiono. Tocca un'icona per vedere data e dettagli.</p>
   <p>Servono a capire il perché di una variazione: se i nitrati salgono e poco prima c'è un 🐠, o il KH scende dopo un 🧪. Il pulsante <b>📌 Eventi</b> in cima ai grafici le mostra o le nasconde.</p>`},
  {id:'homecfg',i:'⚙',t:'Personalizzare la Home',b:`<p>Da <b>Menu → Personalizza la Home</b>, o dal pulsante in fondo alla Home, apri la personalizzazione. Lì scegli quali riquadri vedere (foto della vasca, avvio, report settimanale AI, da fare, ultimi valori, dosaggio) e li riordini con le frecce ↑ ↓. Le modifiche si salvano subito.</p>
   <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Con <b>✂ Ritaglia per la Home</b> scegli solo la parte che ti interessa (per esempio togliendo il mobile o la finestra): il ritaglio usa i pixel originali, quindi resta nitido, e la foto nella galleria non cambia. Ogni vasca ha la sua Home.</p>`},
@@ -2126,7 +2132,7 @@ function vDosi(){
 
 function shownParams(){ return (S.settings.showParams||Object.keys(P)).filter(p=>P[p]) }
 function vGraf(){
-  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}<button class="chip ${chartEvOn()?'on':''}" id="evTog" title="Mostra cambi d'acqua, dosi, inserimenti e manutenzioni">📌 Eventi</button>${chartEvOn()?`<button class="chip ${lsGet('reeflog.chartFeed')==='1'?'on':''}" id="evFeed">🍤 Pasti</button>`:''}</div>${chartEvOn()?`<div class="small mut" style="margin-top:6px">💧 cambio acqua · 🧪 dosaggio · 🐠 inserimento · 🔧 manutenzione${lsGet('reeflog.chartFeed')==='1'?' · 🍤 pasto':''} · tocca un'icona per i dettagli</div>`:''}</div>`;
+  let h=`<div class="card" style="position:sticky;top:58px;z-index:4"><div class="chips" style="margin:0">${[[30,'30 gg'],[90,'3 mesi'],[365,'1 anno'],[0,'Tutto']].map(([d,l])=>`<button class="chip ${d===grafRange?'on':''}" data-gr="${d}">${l}</button>`).join('')}<button class="chip ${chartEvOn()?'on':''}" id="evTog" title="Mostra cambi d'acqua, dosi, inserimenti e manutenzioni">📌 Eventi</button>${chartEvOn()?`<button class="chip ${lsGet('reeflog.chartFeed')==='1'?'on':''}" id="evFeed">🍤 Pasti</button>`:''}</div>${chartEvOn()?`<div class="small mut" style="margin-top:6px">💧 cambio acqua (tutti) · 🧪 dosaggio (triade) · 🐠 inserimento e 🔧 manutenzione (nutrienti)${lsGet('reeflog.chartFeed')==='1'?' · 🍤 pasto':''} · tocca un'icona per i dettagli</div>`:''}</div>`;
   const ps=shownParams();
   if(!ps.length) h+=`<div class="card mut">Nessun parametro selezionato: spuntali in Impostazioni → Range obiettivo.</div>`;
   for(const p of ps){ const n=testsWith(p).length;
@@ -2284,13 +2290,13 @@ function drawCharts(){
   const xmin=Math.max(from??-Infinity,d0-pad), to=now+pad;
   const EVL=chartEvents(xmin,to);
   for(const p of shownParams()){
-    const el=document.getElementById('cv_'+p); if(!el) continue; const evl=EVL.map(m=>Object.assign({},m));
+    const el=document.getElementById('cv_'+p); if(!el) continue; const evl=evFor(EVL,p); const lvMax=(()=>{ const ts=evl.map(m=>m.ts).sort((a,b)=>a-b); let mx=1,run=1; for(let i=1;i<ts.length;i++){ run=ts[i]-ts[i-1]<(to-xmin)*0.035?run+1:1; mx=Math.max(mx,run) } return Math.min(mx,4) })();
     const pts=testsWith(p).filter(t=>!from||t.ts>=from).map(t=>({x:t.ts,y:num(t.v[p])})); const [lo,hi]=tgt(p);
     charts['v_'+p]=new Chart(el,{type:'line',data:{datasets:[
       {label:P[p].n,data:pts,borderColor:'#2ec4d6',backgroundColor:'#2ec4d6',pointRadius:3.5,tension:.25,borderWidth:2},
       {label:'min',data:[{x:xmin,y:lo},{x:to,y:lo}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2},
       {label:'max',data:[{x:xmin,y:hi},{x:to,y:hi}],borderColor:'#3fcf8e88',borderDash:[5,4],pointRadius:0,borderWidth:1.2,fill:'-1',backgroundColor:'#3fcf8e12'}
-    ]},plugins:[evPlugin(evl)],options:{animation:false,onClick:evClick(evl),layout:{padding:{top:evl.length?4:0}},plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0,callbacks:{title:i=>fdate(i[0].parsed.x,true)}}},scales:{x:xTime(xmin,to),y:evl.length?{...AX,grace:'12%'}:AX}}});
+    ]},plugins:[evPlugin(evl)],options:{animation:false,onClick:evClick(evl),layout:{padding:{top:evl.length?18*lvMax+4:0}},plugins:{legend:{display:false},tooltip:{filter:i=>i.datasetIndex===0,callbacks:{title:i=>fdate(i[0].parsed.x,true)}}},scales:{x:xTime(xmin,to),y:AX}}});
   }
   // consumi
   const ds=[]; for(const q of TRI){ const I=intervals(q).filter(x=>x.cons!=null&&(!from||x.t2>=from)); if(!I.length) continue;
