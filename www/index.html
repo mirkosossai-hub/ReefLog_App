@@ -130,7 +130,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2ec4d6" stroke-width="1.8"><path d="M3 18c3-2 6 2 9 0s6 2 9 0"/><path d="M8 15V9a2 2 0 1 1 4 0v6M12 12V6a2 2 0 1 1 4 0v9"/></svg>
   <h1 id="hdrTitle">Reef Log</h1>
   <div class="sub" id="hdrSub"></div>
-  <button id="langBtn" aria-label="Language" style="background:var(--card2);border:1px solid var(--line);width:34px;height:34px;border-radius:50%;font-size:17px;line-height:1;flex:none;margin-left:6px;padding:0"></button>
+  <button id="langBtn" aria-label="Language" style="background:var(--card2);border:1px solid var(--line);width:34px;height:34px;border-radius:50%;flex:none;margin-left:6px;padding:0;display:flex;align-items:center;justify-content:center"></button>
   <button id="helpBtn" aria-label="Guida" style="background:var(--card2);border:1px solid var(--line);color:var(--acc);width:34px;height:34px;border-radius:50%;font:700 17px system-ui;flex:none;margin-left:6px">?</button>
 </header>
 <main id="app"></main>
@@ -1240,7 +1240,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.14.1';
+const APP_VERSION='1.14.2';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -2116,7 +2116,7 @@ function vHome(){
   let h='';
   if(!S.settings.welcomed && !(S.tests.length||S.doses.length||S.events.length||S.tasks.length||S.livestock.length||S.photos.length)){
     h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
-      <div class="chips" data-noi18n style="margin:0 0 8px">${[['it','🇮🇹 Italiano'],['en','🇬🇧 English']].map(([k,l])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}">${l}</button>`).join('')}</div>
+      <div class="chips" data-noi18n style="margin:0 0 8px">${LANGS.map(([k,,l])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}" style="display:inline-flex;align-items:center;gap:6px">${flag(k,16)} ${l}</button>`).join('')}</div>
       <div class="f" style="margin:4px 0 10px"><label>Come ti chiami? (facoltativo)</label><input id="wName" placeholder="es. Mirko" value="${esc(userName())}"></div>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
       <div class="small" style="margin:8px 0 0 2px;line-height:1.7" data-noi18n>${L('1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)','1. the <b>net volume</b> of the tank<br>2. the <b>start-up method</b> (or "none" if it\'s already mature)<br>3. the <b>Ca/KH/Mg product</b> (Balling or All In One)')}</div>
@@ -2826,12 +2826,16 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
     askExit(A);
   });
 })();
-const LANGS=[['it','🇮🇹','Italiano'],['en','🇬🇧','English']];
-function langCard(){ return `<div class="card" data-noi18n><h2>🌐 Lingua · Language</h2><div class="chips" style="margin:0">${LANGS.map(([k,f,n])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}">${f} ${n}</button>`).join('')}</div></div>` }
+const LANGS=[['it','','Italiano'],['en','','English']];
+// bandiere disegnate (le emoji delle bandiere su Windows compaiono come lettere)
+function flag(k,sz=22){ const st=`width:${sz}px;height:${sz}px;border-radius:50%;display:inline-block;vertical-align:middle;flex:none;box-shadow:0 0 0 1px #ffffff33`;
+  return k==='en'?`<svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" style="${st}"><clipPath id="ukc"><path d="M30,15h30v15zv15h-30zh-30v-15zv-15h30z"/></clipPath><path d="M0,0v30h60v-30z" fill="#012169"/><path d="M0,0L60,30M60,0L0,30" stroke="#fff" stroke-width="6"/><path d="M0,0L60,30M60,0L0,30" clip-path="url(#ukc)" stroke="#C8102E" stroke-width="4"/><path d="M30,0v30M0,15h60" stroke="#fff" stroke-width="10"/><path d="M30,0v30M0,15h60" stroke="#C8102E" stroke-width="6"/></svg>`
+  :`<svg viewBox="0 0 3 2" preserveAspectRatio="xMidYMid slice" style="${st}"><rect width="1" height="2" fill="#009246"/><rect x="1" width="1" height="2" fill="#fff"/><rect x="2" width="1" height="2" fill="#ce2b37"/></svg>` }
+function langCard(){ return `<div class="card" data-noi18n><h2>🌐 Lingua · Language</h2><div class="chips" style="margin:0">${LANGS.map(([k,f,n])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}" style="display:inline-flex;align-items:center;gap:6px">${flag(k,16)} ${n}</button>`).join('')}</div></div>` }
 function openLang(){ const el=document.getElementById('sheet');
-  el.innerHTML=`<div class="pane" data-noi18n><div class="row" style="justify-content:space-between;margin-bottom:12px"><b>🌐 Lingua · Language</b><button class="btn sm sec" id="lgX">✕</button></div>${LANGS.map(([k,f,n])=>`<button class="mitem" data-lang="${k}" style="width:100%;font:inherit;color:var(--tx);text-align:left${LANG===k?';border-color:var(--acc)':''}"><i>${f}</i><div class="t"><b>${n}</b></div>${LANG===k?'<span style="color:var(--acc)">✓</span>':''}</button>`).join('')}</div>`;
+  el.innerHTML=`<div class="pane" data-noi18n><div class="row" style="justify-content:space-between;margin-bottom:12px"><b>🌐 Lingua · Language</b><button class="btn sm sec" id="lgX">✕</button></div>${LANGS.map(([k,f,n])=>`<button class="mitem" data-lang="${k}" style="width:100%;font:inherit;color:var(--tx);text-align:left${LANG===k?';border-color:var(--acc)':''}"><i>${flag(k,28)}</i><div class="t"><b>${n}</b></div>${LANG===k?'<span style="color:var(--acc)">✓</span>':''}</button>`).join('')}</div>`;
   el.classList.remove('hide'); el.onclick=e=>{ if(e.target===el) el.classList.add('hide') }; document.getElementById('lgX').onclick=()=>el.classList.add('hide') }
-{ const lb=document.getElementById('langBtn'); if(lb){ lb.textContent=(LANGS.find(x=>x[0]===LANG)||LANGS[0])[1]; lb.onclick=openLang } }
+{ const lb=document.getElementById('langBtn'); if(lb){ lb.innerHTML=flag(LANG,22); lb.onclick=openLang } }
 function setLang(l){ if(l===LANG){ document.getElementById('sheet').classList.add('hide'); return } if(l===LANG) return; const wn=document.getElementById('wName'); if(wn&&wn.value.trim()) setUserName(wn.value); lsSet('reeflog.lang',l); location.reload() }
 document.addEventListener('change',e=>{ if(e.target&&e.target.id==='langSel') setLang(e.target.value) });
 document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-lang]'); if(b) setLang(b.dataset.lang) });
