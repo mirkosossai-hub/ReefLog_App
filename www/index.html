@@ -1106,7 +1106,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.11.4';
+const APP_VERSION='1.12.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1134,7 +1134,7 @@ function aiSave(){ // salva la conversazione senza le immagini (pesanti) e senza
 }
 
 function aiSystem(){
-  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef). Rispondi sempre in italiano, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
+  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef).${userName()?` L'utente si chiama ${userName()}: puoi chiamarlo per nome, senza esagerare.`:''} Rispondi sempre in italiano, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
 Hai accesso ai dati reali della vasca dell'utente tramite gli strumenti: usali per basare le risposte sui suoi numeri invece che su considerazioni generiche. Non inventare valori: se un dato manca, dillo e suggerisci quale test fare.
 Come calcola l'app: il consumo giornaliero tra due test consecutivi = (valore iniziale + quanto dosato + effetto dei cambi d'acqua − valore finale) / giorni. Con l'All In One un solo prodotto apporta Ca, KH e Mg in proporzioni fisse. Con il reattore di calcio l'apporto = portata × (valore effluente − valore in vasca).
 Prudenza: suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno, calcio e magnesio a step), segnala quando un valore sembra un errore di misura, e per problemi seri (morie, valori estremi) consiglia di verificare con un secondo test o un negoziante esperto.
@@ -1427,7 +1427,7 @@ const GUIDE=[
   <p>Il pulsante <b>?</b> in alto apre la spiegazione della sezione in cui ti trovi. Il tasto indietro di Android torna alla sezione precedente; dalla Home chiede se vuoi uscire.</p>`},
  {id:'home',i:'🏠',t:'La Home',b:`<p><b>La Home si può personalizzare.</b> Con il pulsante <b>⚙ Personalizza la Home</b> in fondo alla pagina, o da <b>Menu → Personalizza la Home</b>, scegli quali riquadri vedere e in che ordine, e puoi mettere in alto una foto della vasca, anche ritagliata. <a data-g="homecfg">Come funziona</a></p>
   <button class="btn sm" data-go="homecfg" style="margin-bottom:10px">⚙ Personalizza la Home</button>
-  <p>I riquadri disponibili:</p><ul><li><b>Foto della vasca</b>: la foto che scegli, con il nome della vasca e da quanti giorni è avviata.</li><li><b>Avvio / Maturazione</b>: giorni trascorsi e curva di ammoniaca, nitriti e nitrati (solo se hai impostato un avvio).</li>
+  <p>I riquadri disponibili:</p><ul><li><b>Saluto e situazione</b>: «Buongiorno» con il tuo nome (lo imposti in Impostazioni) e una riga che riassume cosa c'è da guardare: cose da fare oggi o in ritardo, parametri fuori range, giorno dell'avvio, test vecchi. Se è tutto a posto: «tutto nel range ✓».</li><li><b>Foto della vasca</b>: la foto che scegli, con il nome della vasca e da quanti giorni è avviata.</li><li><b>Avvio / Maturazione</b>: giorni trascorsi e curva di ammoniaca, nitriti e nitrati (solo se hai impostato un avvio).</li>
   <li><b>Da fare</b>: scadenze di oggi, di domani o in ritardo, e l'avviso se il TDS dell'osmosi è troppo alto.</li>
   <li><b>Ultimi valori</b>: l'ultima misura di ogni parametro, con la variazione rispetto alla precedente. Il bordo colorato indica: <span style="color:var(--ok)">verde</span> nel range, <span style="color:var(--warn)">giallo</span> vicino ai limiti, <span style="color:var(--bad)">rosso</span> lontano. Tocca un valore per aprirne il grafico.</li>
   <li><b>Triade</b>: dose attuale, consumo giornaliero e dose consigliata per calcio, KH e magnesio.</li>
@@ -1860,10 +1860,32 @@ function render(){
   clearTimeout(render._w); render._w=setTimeout(widgetPush,1500);
 }
 
+/* ---------- Saluto in Home ---------- */
+function userName(){ return (lsGet('reeflog.username')||'').trim() }
+function setUserName(n){ lsSet('reeflog.username',(n||'').trim().slice(0,30)) }
+function greetWord(){ const h=new Date().getHours(); return h<5?'Buonanotte':h<13?'Buongiorno':h<18?'Buon pomeriggio':'Buonasera' }
+function greetStatus(){
+  const now=Date.now(), end=new Date(); end.setHours(23,59,59,999);
+  const out=[];
+  const due=S.tasks.map(t=>nextDue(t)).filter(d=>d<=end.getTime()), late=due.filter(d=>d<day0(now)).length;
+  if(late) out.push(`<span style="color:var(--bad)">${late} ${late===1?'cosa in ritardo':'cose in ritardo'}</span>`);
+  else if(due.length) out.push(`<span style="color:var(--warn)">${due.length} ${due.length===1?'cosa da fare oggi':'cose da fare oggi'}</span>`);
+  const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]);
+  const off=ps.map(p=>[p,lastVal(p)]).filter(([p,l])=>l&&status(p,l.v)!=='s-ok');
+  const bad=off.filter(([p,l])=>status(p,l.v)==='s-bad');
+  if(bad.length) out.push(`<span style="color:var(--bad)">${bad.slice(0,2).map(([p])=>P[p].n).join(' e ')} fuori range</span>`);
+  else if(off.length) out.push(`<span style="color:var(--warn)">${off.slice(0,2).map(([p])=>P[p].n).join(' e ')} da tenere d'occhio</span>`);
+  const si=startInfo(); if(si&&si.show&&!si.done) out.push(si.mode==='fixed'?`giorno ${si.day} di ${si.tot} dell'avvio`:`giorno ${si.day} di maturazione`);
+  if(!S.tests.length) out.push('inserisci il primo test');
+  else{ const lt=Math.max(...S.tests.map(t=>t.ts)), d=Math.floor((day0(now)-day0(lt))/DAY); if(d>=7) out.push(`ultimo test ${d} giorni fa`) }
+  if(!out.length||(out.length===1&&/avvio|maturazione/.test(out[0]))) out.unshift('<span style="color:var(--ok)">tutto nel range ✓</span>');
+  return out.join(' · ');
+}
+function homeGreet(){ const n=userName(); return `<div style="margin:2px 4px 12px"><div style="font-size:20px;font-weight:700">${greetWord()}${n?' '+esc(n):''}</div><div class="small" style="margin-top:3px">${greetStatus()}</div></div>` }
 /* ---------- Home personalizzabile (ogni vasca la sua) ---------- */
-const HOME_BLOCKS=[['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','📋','Report settimanale AI','commento automatico dell\'assistente AI (Pro): non è il Report PDF'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
+const HOME_BLOCKS=[['greet','👋','Saluto e situazione','buongiorno con il tuo nome e cosa c\'è da guardare'],['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','📋','Report settimanale AI','commento automatico dell\'assistente AI (Pro): non è il Report PDF'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
 function homeCfg(){ return Object.assign({order:[],hide:{},photo:null},S.settings.home||{}) }
-function homeOrder(){ const o=homeCfg().order.filter(id=>HOME_BLOCKS.some(b=>b[0]===id)); for(const [id] of HOME_BLOCKS) if(!o.includes(id)) o.push(id); return o }
+function homeOrder(){ const o=homeCfg().order.filter(id=>HOME_BLOCKS.some(b=>b[0]===id)); HOME_BLOCKS.forEach(([id],i)=>{ if(!o.includes(id)) o.splice(Math.min(i,o.length),0,id) }); return o } // i riquadri nuovi entrano nella loro posizione predefinita
 function homeHidden(id){ const c=homeCfg(); if(id==='photo') return !c.photo||!S.photos.some(p=>p.id===c.photo)||c.hide.photo; return !!c.hide[id] }
 async function homeSave(ch){ S.settings.home=Object.assign(homeCfg(),ch); await saveSettings(); render() }
 function tankAgeTxt(){ const sd=S.settings.startDate; if(!sd) return ''; const st=day0(new Date(sd+'T00:00').getTime()); if(!isFinite(st)) return ''; const d=Math.floor((day0(Date.now())-st)/DAY)+1; return d>=1?`in vasca da ${d} ${d===1?'giorno':'giorni'}`:'' }
@@ -1945,6 +1967,7 @@ function vHome(){
   let h='';
   if(!S.settings.welcomed && !(S.tests.length||S.doses.length||S.events.length||S.tasks.length||S.livestock.length||S.photos.length)){
     h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
+      <div class="f" style="margin:4px 0 10px"><label>Come ti chiami? (facoltativo)</label><input id="wName" placeholder="es. Mirko" value="${esc(userName())}"></div>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
       <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" data-go="guida-primi">📖 Guida</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
@@ -2000,7 +2023,7 @@ function vHome(){
   if(dmode()==='balling'&&(!effPerMl('mg')||!effPerMl('ca')||!effPerMl('kh'))) bd+=`<hr><div class="small mut">Imposta la concentrazione delle soluzioni in <a href="#" data-go="impostazioni" style="color:var(--acc)">Impostazioni</a> per calcolare consumi e dosi.</div>`;
   bd+=`<div class="small mut" style="margin-top:8px">Consumo = media pesata degli ultimi 30 gg tra test consecutivi, al netto di dosi e cambi d'acqua.</div>${isPro()?'<button class="btn sm" style="margin-top:10px" data-aiask="Analizza il mio dosaggio e i consumi della triade: sto dosando correttamente? Cosa dovrei cambiare?">✨ Chiedi all\'assistente</button>':''}</div>`;
   }
-  B.dosing=bd; B.photo=homePhoto();
+  B.dosing=bd; B.photo=homePhoto(); B.greet=homeGreet();
   for(const id of homeOrder()) if(!homeHidden(id)) h+=B[id]||'';
   h+=`<div style="text-align:center;margin:4px 0 14px"><button class="btn sm sec" data-go="homecfg">⚙ Personalizza la Home</button></div>`;
   return h;
@@ -2213,7 +2236,7 @@ function vDiario(){
 
 function vSet(){
   const s=S.settings;
-  let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Vasca</h2>
+  let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Tu</h2><div class="f"><label>Il tuo nome (per il saluto in Home, vale per tutte le vasche)</label><input name="uname" placeholder="es. Mirko" value="${esc(userName())}"></div></div><div class="card"><h2>Vasca</h2>
     <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" placeholder="es. 200" value="${esc(String(s.volume??'').replace('.',','))}"></div></div>
     <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
   <div class="card"><h2>Avvio e manutenzione</h2>
@@ -2519,8 +2542,9 @@ function bind(){
     openViewer(id) });
   bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
-  if(wg) wg.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
-  if(wx) wx.onclick=async()=>{ S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
+  const wn=document.getElementById('wName'); if(wn) wn.onchange=()=>setUserName(wn.value);
+  if(wg) wg.onclick=async()=>{ if(wn) setUserName(wn.value); S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
+  if(wx) wx.onclick=async()=>{ if(wn) setUserName(wn.value); S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings() };
   const sd=document.getElementById('seedTasks');
   if(sd) sd.onclick=async()=>{ sd.disabled=true; for(const t0 of DEFAULT_TASKS){ const t=Object.assign({id:uid()},clone(t0)); if(t.wc&&bacterOn()) Object.assign(t,{name:'Cambio acqua 10% + batteri',kind:'monthly',days:[15,30],bacter:true}); if(!await saveItem('tasks',t)) break } toast('Scadenze create'); render() };
   app.querySelectorAll('[data-done]').forEach(b=>b.onclick=async()=>{ const t=S.tasks.find(x=>x.id===b.dataset.done); if(!t) return;
@@ -2577,6 +2601,7 @@ function bind(){
       toast('Valori calcolati: ricordati di salvare');
     };
     fS.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fS); const s=clone(S.settings);
+      setUserName(o.uname||'');
       s.volume=num(o.volume)||s.volume;
       s.conc={ca:num(o.c_ca)??'',kh:num(o.c_kh)??'',mg:num(o.c_mg)??''};
       s.salt={ca:num(o.s_ca)??'',kh:num(o.s_kh)??'',mg:num(o.s_mg)??''};
