@@ -1,4 +1,4 @@
-package it.reeflog.app;
+package app.reefnova;
 
 import android.content.Context;
 import com.getcapacitor.Plugin;

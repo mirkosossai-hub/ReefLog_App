@@ -11,7 +11,7 @@
         android:id="@+id/w_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Reef Log"
+        android:text="ReefNova"
         android:textColor="#2ec4d6"
         android:textSize="13sp"
         android:textStyle="bold"

@@ -1,4 +1,4 @@
-package it.reeflog.app;
+package app.reefnova;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -40,11 +40,11 @@ public class ReefWidgetProvider extends AppWidgetProvider {
         String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("data", null);
         en = !java.util.Locale.getDefault().getLanguage().equals("it");
         try {
-            if (raw == null) return message(v, L("Apri Reef Log per attivare il widget", "Open Reef Log to activate the widget"));
+            if (raw == null) return message(v, L("Apri ReefNova per attivare il widget", "Open ReefNova to activate the widget"));
             JSONObject d = new JSONObject(raw);
             if (d.has("lang")) en = "en".equals(d.optString("lang"));
-            v.setTextViewText(R.id.w_title, d.optString("tank", "Reef Log"));
-            if (!d.optBoolean("pro", false)) return message(v, L("Il widget è una funzione di Reef Log Pro", "The widget is a Reef Log Pro feature"));
+            v.setTextViewText(R.id.w_title, d.optString("tank", "ReefNova"));
+            if (!d.optBoolean("pro", false)) return message(v, L("Il widget è una funzione di ReefNova Pro", "The widget is a ReefNova Pro feature"));
             v.setViewVisibility(R.id.w_vals, View.VISIBLE);
             v.setViewVisibility(R.id.w_msg, View.GONE);
             JSONArray ps = d.optJSONArray("params");
@@ -59,7 +59,7 @@ public class ReefWidgetProvider extends AppWidgetProvider {
             JSONObject nx = d.optJSONObject("next");
             v.setTextViewText(R.id.w_line2, nx == null ? "" : nx.optString("n") + " · " + due(nx.optLong("ts", 0)));
         } catch (Exception e) {
-            return message(v, L("Apri Reef Log per aggiornare il widget", "Open Reef Log to update the widget"));
+            return message(v, L("Apri ReefNova per aggiornare il widget", "Open ReefNova to update the widget"));
         }
         return v;
     }

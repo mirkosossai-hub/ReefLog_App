@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Reef Log</title>
+<title>ReefNova</title>
 <meta name="theme-color" content="#07131c">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -128,7 +128,7 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <body>
 <header>
   <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2ec4d6" stroke-width="1.8"><path d="M3 18c3-2 6 2 9 0s6 2 9 0"/><path d="M8 15V9a2 2 0 1 1 4 0v6M12 12V6a2 2 0 1 1 4 0v9"/></svg>
-  <h1 id="hdrTitle">Reef Log</h1>
+  <h1 id="hdrTitle">ReefNova</h1>
   <div class="sub" id="hdrSub"></div>
   <button id="langBtn" aria-label="Language" style="background:var(--card2);border:1px solid var(--line);width:34px;height:34px;border-radius:50%;flex:none;margin-left:6px;padding:0;display:flex;align-items:center;justify-content:center"></button>
   <button id="helpBtn" aria-label="Guida" style="background:var(--card2);border:1px solid var(--line);color:var(--acc);width:34px;height:34px;border-radius:50%;font:700 17px system-ui;flex:none;margin-left:6px">?</button>
@@ -479,7 +479,7 @@ async function saveFile(fn,data,mime){
 function icsDate(ts){ const d=new Date(ts); return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0') }
 function icsEsc(t){ return String(t).replace(/[\;,]/g,m=>'\\'+m).replace(/\n/g,'\\n') }
 function buildIcs(){
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Reef Log//IT','CALSCALE:GREGORIAN'];
+  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//ReefNova//IT','CALSCALE:GREGORIAN'];
   const stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
   const ev=(id,ts,rule,t)=>{ const desc=t.bacter?bacterTxt():''; L.push('BEGIN:VEVENT','UID:'+id+'@reeflog','DTSTAMP:'+stamp,'DTSTART;VALUE=DATE:'+icsDate(ts),'DTEND;VALUE=DATE:'+icsDate(addDays(ts,1)),'RRULE:'+rule,'SUMMARY:'+icsEsc('🐠 '+t.name));
     if(desc) L.push('DESCRIPTION:'+icsEsc(desc)); L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc(t.name),'TRIGGER:PT9H','END:VALARM','END:VEVENT') };
@@ -643,15 +643,44 @@ function bindCatalog(){
       if(x) for(const p of TRI) f.elements[pre+p].value=String(x[p]).replace('.',',');
       if(x) toast('Valori compilati: premi Salva impostazioni') } }
 }
+/* ---------- Segnala un problema o un'idea (email allo sviluppatore con i dati tecnici) ---------- */
+const FB_MAIL='reefnovaapp@gmail.com';
+let fbType='bug', fbFrom='home', fbText='';
+const FB_TYPES=[['bug','🐞',L('Problema','Problem')],['idea','💡',L('Idea','Idea')],['other','💬',L('Altro','Other')]];
+function fbSections(){ return [['home','Home'],['param',L('Parametri e grafici','Parameters and charts')],['vasca',L('Animali e foto','Livestock and photos')],['dosi',L('Dosaggio','Dosing')],['manut',L('Manutenzione e notifiche','Maintenance and notifications')],['osmosi',L('Osmosi','RO unit')],['diario',L('Diario','Log')],['scorte',L('Scorte','Stock')],['attrezzatura',L('Attrezzatura','Equipment')],['alimentazione',L('Alimentazione','Feeding')],['spese',L('Spese','Expenses')],['icp','ICP'],['ai',L('Assistente AI','AI assistant')],['pdf',L('Report PDF','PDF report')],['aiexp',L('Esporta per AI','Export for AI')],['sync',L('Backup e Drive','Backup and Drive')],['widget','Widget'],['impostazioni',L('Impostazioni','Settings')],['guida',L('Guida','Guide')],['altro',L('Altro / tutta l\'app','Other / whole app')]] }
+function fbDevice(){ const u=navigator.userAgent||''; const m=/Android\s*([\d.]+)?;\s*([^;)]+)/.exec(u); return m?`Android ${m[1]||''}${m[2]&&!/^wv$/i.test(m[2].trim())?' · '+m[2].replace(/\s*Build\/.*$/,'').trim():''}`:(/iPhone|iPad/.test(u)?'iOS':/Windows/.test(u)?'Windows':/Mac OS/.test(u)?'Mac':/Linux/.test(u)?'Linux':'?') }
+function fbMail(){
+  const t=FB_TYPES.find(x=>x[0]===fbType)||FB_TYPES[0], sec=(fbSections().find(x=>x[0]===fbFrom)||fbSections()[0])[1];
+  const subject=`[ReefNova ${APP_VERSION}] ${t[1]} ${t[2]} · ${sec}`;
+  const body=`${fbText.trim()}\n\n${L('(Se serve, allega uno screenshot prima di inviare.)','(If useful, attach a screenshot before sending.)')}\n\n— ${L('Dati tecnici','Technical data')} —\n${L('Versione','Version')}: ReefNova ${APP_VERSION} · ${LOCAL_ONLY?L('app Android','Android app'):'web app'}\n${L('Dispositivo','Device')}: ${fbDevice()} · ${innerWidth}×${innerHeight}\n${L('Lingua','Language')}: ${LANG} · Pro: ${isPro()?L('sì','yes'):'no'}${aiCode()?' · '+L('codice tester','tester code')+': '+aiCode():''}\n${L('Sezione','Section')}: ${sec}\n${L('Dati','Data')}: ${tanks().length} ${L('vasche','tanks')} · ${S.tests.length} test · ${S.doses.length} ${L('dosi','doses')}\n${L('Data','Date')}: ${new Date().toLocaleString(LOC)}`;
+  return {subject,body};
+}
+function vFeedback(){
+  return `<div class="card" data-noi18n><div class="small">${L("Hai trovato un errore o hai un'idea per migliorare l'app? Scrivila qui: si apre la tua app di posta con il messaggio pronto, con versione e dati tecnici già inseriti. Nessun dato della vasca viene inviato.","Found a bug or have an idea to improve the app? Write it here: your mail app opens with the message ready, with version and technical details already filled in. No tank data is sent.")}</div>
+    <div class="chips" style="margin-top:10px">${FB_TYPES.map(([k,i,n])=>`<button class="chip ${fbType===k?'on':''}" data-fbt="${k}">${i} ${n}</button>`).join('')}</div>
+    <div class="f" style="margin-top:4px"><label>${L('Dove','Where')}</label><select id="fbSec">${fbSections().map(([k,n])=>`<option value="${k}" ${fbFrom===k?'selected':''}>${n}</option>`).join('')}</select></div>
+    <div class="f" style="margin-top:10px"><label>${fbType==='bug'?L('Cosa succede? Cosa ti aspettavi? Come si ripete?','What happens? What did you expect? How can it be repeated?'):L('Descrivi la tua idea','Describe your idea')}</label><textarea id="fbTxt" style="min-height:150px" placeholder="${fbType==='bug'?L('es. Nel grafico del KH il punto di ieri non compare','e.g. Yesterday\'s point is missing from the KH chart'):L('es. Mi piacerebbe poter…','e.g. I would like to be able to…')}">${esc(fbText)}</textarea></div>
+    <button class="btn" id="fbSend" style="width:100%;margin-top:10px">✉️ ${L('Prepara la mail','Prepare the email')}</button>
+    <button class="btn sec sm" id="fbCopy" style="width:100%;margin-top:8px">📋 ${L('Copia il testo (se la posta non si apre)','Copy the text (if mail does not open)')}</button>
+    <div class="small mut" style="margin-top:8px">${L('Indirizzo','Address')}: <b>${FB_MAIL}</b> · ${L('Per i problemi di calcolo puoi allegare anche il testo di Menu → Esporta per AI.','For calculation problems you can also attach the text from Menu → Export for AI.')}</div></div>`;
+}
+function bindFeedback(){
+  document.querySelectorAll('[data-fbt]').forEach(b=>b.onclick=()=>{ const t=document.getElementById('fbTxt'); if(t) fbText=t.value; fbType=b.dataset.fbt; render() });
+  const sec=document.getElementById('fbSec'); if(sec) sec.onchange=()=>{ fbFrom=sec.value };
+  const tx_=document.getElementById('fbTxt'); if(tx_) tx_.oninput=()=>{ fbText=tx_.value };
+  const ok=()=>{ if(!fbText.trim()){ toast(L('Scrivi prima cosa vuoi segnalare','Write what you want to report first')); return false } return true };
+  const sd=document.getElementById('fbSend'); if(sd) sd.onclick=()=>{ if(!ok()) return; const m=fbMail(); location.href=`mailto:${FB_MAIL}?subject=${encodeURIComponent(m.subject)}&body=${encodeURIComponent(m.body)}`; toast(L('Si apre la posta: controlla e premi Invia','Your mail app opens: check and tap Send')) };
+  const cp=document.getElementById('fbCopy'); if(cp) cp.onclick=async()=>{ if(!ok()) return; const m=fbMail(), t=`${L('A','To')}: ${FB_MAIL}\n${L('Oggetto','Subject')}: ${m.subject}\n\n${m.body}`; try{ await navigator.clipboard.writeText(t); toast(L('Copiato: incollalo in una mail','Copied: paste it into an email')) }catch(e){ toast(FB_MAIL) } };
+}
 /* ---------- Esporta per AI (gratuito): testo con i dati della vasca da incollare nella propria AI ---------- */
 let aixDays=90, aixTxt=null;
 function aiExportText(days){
   const now=Date.now(), from=days?now-days*DAY:0, st=S.settings, d=ts=>new Date(ts).toLocaleDateString(LOC,{day:'2-digit',month:'2-digit',year:'numeric'});
   const cell=v=>String(v??'').replace(/\|/g,'/').replace(/\s+/g,' ').trim();
   const o=[], H=t=>o.push('','## '+t);
-  o.push(`# Reef Log · ${tx(tankName())} · ${L('dati esportati il','data exported on')} ${d(now)}`,'',
-    L("Sei un esperto di acquari marini di barriera. Qui sotto trovi i dati reali della mia vasca, esportati dall'app Reef Log. Analizzali e dimmi: come vanno i parametri e il loro andamento, se consumi e dosaggio di calcio, KH e magnesio sono in equilibrio, cosa potrebbe causare eventuali problemi e cosa dovrei controllare o correggere. Basati sui numeri e non inventare i dati che mancano (dimmi quale test fare). Suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno). Rispondi in italiano, poi resta disponibile per le mie domande.",
-      "You are an expert reef aquarist. Below is the real data from my tank, exported from the Reef Log app. Analyze it and tell me: how the parameters and their trends look, whether calcium, KH and magnesium consumption and dosing are balanced, what could cause any problems and what I should check or correct. Base your answer on the numbers and don't invent missing data (tell me which test to do). Suggest gradual corrections (KH no more than about 1 dKH per day). Then stay available for my questions."));
+  o.push(`# ReefNova · ${tx(tankName())} · ${L('dati esportati il','data exported on')} ${d(now)}`,'',
+    L("Sei un esperto di acquari marini di barriera. Qui sotto trovi i dati reali della mia vasca, esportati dall'app ReefNova. Analizzali e dimmi: come vanno i parametri e il loro andamento, se consumi e dosaggio di calcio, KH e magnesio sono in equilibrio, cosa potrebbe causare eventuali problemi e cosa dovrei controllare o correggere. Basati sui numeri e non inventare i dati che mancano (dimmi quale test fare). Suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno). Rispondi in italiano, poi resta disponibile per le mie domande.",
+      "You are an expert reef aquarist. Below is the real data from my tank, exported from the ReefNova app. Analyze it and tell me: how the parameters and their trends look, whether calcium, KH and magnesium consumption and dosing are balanced, what could cause any problems and what I should check or correct. Base your answer on the numbers and don't invent missing data (tell me which test to do). Suggest gradual corrections (KH no more than about 1 dKH per day). Then stay available for my questions."));
   H(L('La vasca','The tank'));
   o.push(`- ${L('Volume netto','Net volume')}: ${volSet()?vol()+' L':L('non impostato','not set')}`);
   const si=startInfo();
@@ -670,7 +699,7 @@ function aiExportText(days){
     o.push(`| ${L('Data','Date')} | ${ks.map(p=>P[p].n+(P[p].u?' ('+P[p].u+')':'')).join(' | ')} | ${L('Note','Notes')} |`,'|'+'---|'.repeat(ks.length+2));
     for(const t of T) o.push(`| ${d(t.ts)} | ${ks.map(p=>{ const v=num(t.v?.[p]); return v==null?'':fmt(v,P[p].d) }).join(' | ')} | ${cell(t.note)} |`) }
   const cons=TRI.map(p=>[p,avgCons(p)]).filter(([,c])=>c!=null);
-  if(cons.length){ H(L('Consumo medio (ultimi 30 giorni, calcolato da Reef Log)','Average consumption (last 30 days, calculated by Reef Log)')); for(const [p,c] of cons) o.push(`- ${P[p].n}: ${fmt(c,p==='kh'?2:1)} ${P[p].u} ${L('al giorno','per day')}`) }
+  if(cons.length){ H(L('Consumo medio (ultimi 30 giorni, calcolato da ReefNova)','Average consumption (last 30 days, calculated by ReefNova)')); for(const [p,c] of cons) o.push(`- ${P[p].n}: ${fmt(c,p==='kh'?2:1)} ${P[p].u} ${L('al giorno','per day')}`) }
   const D=S.doses.filter(x=>x.ts>=from).sort(byTs);
   if(D.length){ H(L('Variazioni della dose giornaliera','Daily dose changes')); for(const x of D) o.push(`- ${d(x.ts)}: ${tx(doseTxt(x))}${x.note?' · '+cell(x.note):''}`) }
   const WC=S.events.filter(e=>e.type==='wc'&&e.ts>=from).sort(byTs);
@@ -697,14 +726,14 @@ function vAIExp(){
     <div class="row" data-noi18n><button class="btn" id="axCopy" style="flex:1">📋 ${L('Copia','Copy')}</button><button class="btn sec" id="axShare" style="flex:1">↗ ${L('Condividi','Share')}</button></div>
     <textarea id="axTxt" spellcheck="false" style="margin-top:10px;min-height:280px;font:12px/1.45 ui-monospace,Menlo,monospace">${esc(aixTxt)}</textarea>
     <div class="small mut" style="margin-top:6px" data-noi18n>${L("Il testo resta sul telefono finché non lo incolli tu: puoi leggerlo e cancellare quello che non vuoi condividere. L'AI che scegli ha le sue regole sulla privacy.","The text stays on your phone until you paste it: you can read it and delete anything you don't want to share. The AI you choose has its own privacy rules.")}</div>
-    ${isPro()?'':`<div class="small" style="margin-top:10px" data-noi18n>✨ ${L("Con Reef Log Pro l'assistente è dentro l'app, conosce già i tuoi dati e può registrare test, note e dosi.","With Reef Log Pro the assistant is built into the app, already knows your data and can log tests, notes and doses.")}</div>`}</div>`;
+    ${isPro()?'':`<div class="small" style="margin-top:10px" data-noi18n>✨ ${L("Con ReefNova Pro l'assistente è dentro l'app, conosce già i tuoi dati e può registrare test, note e dosi.","With ReefNova Pro the assistant is built into the app, already knows your data and can log tests, notes and doses.")}</div>`}</div>`;
 }
 function bindAIExp(){
   document.querySelectorAll('[data-aix]').forEach(b=>b.onclick=()=>{ aixDays=+b.dataset.aix; render() });
   const box=document.getElementById('axTxt'), val=()=>box?box.value:(aixTxt||'');
   const cp=document.getElementById('axCopy'); if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(val()); toast(L('Copiato: incollalo nella tua AI','Copied: paste it into your AI')) }catch(e){ try{ box.focus(); box.select(); document.execCommand('copy'); toast(L('Copiato: incollalo nella tua AI','Copied: paste it into your AI')) }catch(e2){ toast(L('Seleziona il testo e copialo','Select the text and copy it')) } } };
   const sh=document.getElementById('axShare'); if(sh) sh.onclick=async()=>{ const text=val(), C=CAP(), SH=C&&((C.Plugins&&C.Plugins.Share)||(C.registerPlugin&&C.registerPlugin('Share')));
-    try{ if(SH&&SH.share){ await SH.share({title:'Reef Log',text,dialogTitle:L('Condividi i dati della vasca','Share tank data')}); return } if(navigator.share){ await navigator.share({title:'Reef Log',text}); return } }catch(e){ if(e&&(e.name==='AbortError'||/cancel/i.test(e.message||''))) return }
+    try{ if(SH&&SH.share){ await SH.share({title:'ReefNova',text,dialogTitle:L('Condividi i dati della vasca','Share tank data')}); return } if(navigator.share){ await navigator.share({title:'ReefNova',text}); return } }catch(e){ if(e&&(e.name==='AbortError'||/cancel/i.test(e.message||''))) return }
     cp&&cp.onclick() };
 }
 /* ---------- Report PDF (gratuito, generato sul telefono) ---------- */
@@ -728,7 +757,7 @@ async function buildPDF(days){
   const h1=(t)=>{ page(); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(14,124,140); doc.text(clean(t),M,y); y+=7; doc.setTextColor(30); doc.setFont('helvetica','normal'); doc.setFontSize(10) };
   const line=(t,ind=0)=>{ const L=doc.splitTextToSize(clean(t),W-2*M-ind); for(const l of L){ page(); doc.text(l,M+ind,y); y+=5 } };
   // intestazione
-  doc.setFillColor(7,19,28); doc.rect(0,0,W,30,'F'); doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('Reef Log',M,14);
+  doc.setFillColor(7,19,28); doc.rect(0,0,W,30,'F'); doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('ReefNova',M,14);
   doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.text(clean(`${MULTI&&tanks().length>1?tankName()+' · ':''}Report dal ${new Date(from).toLocaleDateString(LOC)} al ${new Date(now).toLocaleDateString(LOC)}`),M,22);
   y=40; doc.setTextColor(30); doc.setFontSize(10);
   h1('La vasca');
@@ -756,7 +785,7 @@ async function buildPDF(days){
   if(MT.length){ y+=3; h1('Diario: manutenzioni e note'); const lab={maint:'Manutenzione',dose:'Dose manuale',note:'Nota',live:'Inserimento',tds:'TDS osmosi'};
     for(const e of MT) line(`${new Date(e.ts).toLocaleDateString(LOC)}: ${tx(lab[e.type])}${e.type==='tds'?' '+fmt(num(e.tds),0)+' ppm':''}${e.note?' - '+e.note:''}`) }
   const al=lvAlive(); if(al.length){ y+=3; h1('Animali e coralli in vasca'); for(const x of al) line(`${x.name}${x.species?' ('+x.species+')':''}${(num(x.qty)||1)>1?' x'+x.qty:''} - ${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]}, inserito il ${new Date(x.ts).toLocaleDateString(LOC)}`) }
-  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Generato con Reef Log il ${new Date().toLocaleDateString(LOC)} - pagina ${i} di ${n}`,M,292) }
+  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Generato con ReefNova il ${new Date().toLocaleDateString(LOC)} - pagina ${i} di ${n}`,M,292) }
   return doc.output('blob');
 }
 function vPDF(){
@@ -768,13 +797,13 @@ function vPDF(){
 function bindPDF(){
   document.querySelectorAll('[data-pdfd]').forEach(b=>b.onclick=()=>{ pdfDays=+b.dataset.pdfd; render() });
   const g=document.getElementById('pdfGo'); if(g) g.onclick=async()=>{ if(!S.tests.length){ toast('Inserisci almeno un test'); return } _pdfBusy=true; render();
-    try{ const blob=await buildPDF(pdfDays); const fn=`reeflog-report-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.pdf`;
+    try{ const blob=await buildPDF(pdfDays); const fn=`reefnova-report-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.pdf`;
       const r=await saveFile(fn,blob,'application/pdf'); if(r&&r!=='abort') toast('Report PDF pronto') }catch(e){ console.warn(e); toast('Errore nella creazione del PDF') }
     _pdfBusy=false; render() };
 }
 
 /* ---------- Backup su Google Drive (app Android, versione base) ---------- */
-// ID client "Applicazione web" del progetto Google Cloud di Reef Log (non è un segreto)
+// ID client "Applicazione web" del progetto Google Cloud di ReefNova (non è un segreto)
 const GDRIVE_CLIENT='614386911434-t3jbfeuinrf359q9mkdkg22avies7i1g.apps.googleusercontent.com';
 const GD_SCOPE='https://www.googleapis.com/auth/drive.appdata', GD_API='https://www.googleapis.com/drive/v3', GD_UP='https://www.googleapis.com/upload/drive/v3';
 const GD_SKIP=/^reeflog\.(aikey|aicode|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget|lang)/;
@@ -841,7 +870,7 @@ function vDrive(){
   if(!gdAvail()) return '';
   const c=gdCfg(); let h=`<div class="card"><h2>Backup su Google Drive</h2>`;
   if(!gdClientId()) return h+`<div class="small mut">Backup su Drive in arrivo con il prossimo aggiornamento.</div>${devMode()?`<div class="f" style="margin-top:8px"><label>ID client web Google (sviluppatore)</label><input id="gcid" placeholder="….apps.googleusercontent.com"></div><button class="btn sm sec" id="gcidSave" style="margin-top:6px">Salva ID</button>`:''}</div>`;
-  if(!c.on) return h+`<div class="small">Salva automaticamente dati e foto nel tuo Google Drive, in una cartella nascosta che vede solo Reef Log. Se cambi telefono, colleghi lo stesso account e ripristini tutto.</div>
+  if(!c.on) return h+`<div class="small">Salva automaticamente dati e foto nel tuo Google Drive, in una cartella nascosta che vede solo ReefNova. Se cambi telefono, colleghi lo stesso account e ripristini tutto.</div>
     <button class="btn" id="gdOn" style="width:100%;margin-top:10px" ${GD_busy?'disabled':''}>Collega Google Drive</button>
     <button class="btn sm sec" id="gdRest" style="width:100%;margin-top:8px" ${GD_busy?'disabled':''}>Ho già un backup: ripristina</button>${GD_msg?`<div class="small mut" style="margin-top:6px">${esc(GD_msg)}</div>`:''}</div>`;
   h+=`<div class="small">Collegato come <b>${esc(c.email||'account Google')}</b></div>
@@ -869,7 +898,7 @@ function widgetPush(){
   const tk=[...S.tasks].filter(t=>t.on!==false).map(t=>({n:tx(t.name),ts:nextDue(t)})).sort((a,b)=>a.ts-b.ts)[0]||null;
   const WN={kh:'KH',ca:'Ca',mg:'Mg',po4:'PO₄',no3:'NO₃',no2:'NO₂',nh4:'NH₄'};
   const params=['kh','ca','mg','po4','no3','no2','nh4'].map((p,i)=>{ const l=lastVal(p); return {n:WN[p],v:l?fmt(l.v,P[p].d):'–',u:i<3?P[p].u:'',s:l?status(p,l.v).replace('s-',''):''} });
-  const d=JSON.stringify({lang:LANG,pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'Reef Log',params,lastTest:lt,next:tk});
+  const d=JSON.stringify({lang:LANG,pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'ReefNova',params,lastTest:lt,next:tk});
   if(d===_wLast) return; _wLast=d; W.update({data:d}).catch(()=>{});
 }
 
@@ -1240,7 +1269,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.14.2';
+const APP_VERSION='1.15.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1252,7 +1281,7 @@ function devMode(){ return lsGet('reeflog.dev')==='1' }
 function isPro(){ return lsGet('reeflog.pro')==='1' }
 function aiCfg(){ let c={}; try{ c=JSON.parse(lsGet('reeflog.aicfg')||'{}')||{} }catch(e){} return Object.assign({provider:'anthropic',model:''},c) }
 function aiKey(){ return lsGet('reeflog.aikey')||'' }
-// accesso all'AI: codice di accesso (passa dal server Reef Log) oppure, solo per lo sviluppatore, chiave personale
+// accesso all'AI: codice di accesso (passa dal server ReefNova) oppure, solo per lo sviluppatore, chiave personale
 function aiCode(){ return (lsGet('reeflog.aicode')||'').trim().toUpperCase() }
 function aiReady(){ return !!(aiKey()||aiCode()) }
 function aiProxyUrl(){ return SB_URL+'/functions/v1/ai-proxy' }
@@ -1272,7 +1301,7 @@ function aiSave(){ // salva la conversazione senza le immagini (pesanti) e senza
 }
 
 function aiSystem(){
-  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef).${userName()?` L'utente si chiama ${userName()}: puoi chiamarlo per nome, senza esagerare.`:''} ${LANG==='en'?'Rispondi sempre in INGLESE (English)':'Rispondi sempre in italiano'}, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
+  return `Sei l'assistente di ReefNova, un'app italiana per la gestione di acquari marini (reef).${userName()?` L'utente si chiama ${userName()}: puoi chiamarlo per nome, senza esagerare.`:''} ${LANG==='en'?'Rispondi sempre in INGLESE (English)':'Rispondi sempre in italiano'}, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
 Hai accesso ai dati reali della vasca dell'utente tramite gli strumenti: usali per basare le risposte sui suoi numeri invece che su considerazioni generiche. Non inventare valori: se un dato manca, dillo e suggerisci quale test fare.
 Come calcola l'app: il consumo giornaliero tra due test consecutivi = (valore iniziale + quanto dosato + effetto dei cambi d'acqua − valore finale) / giorni. Con l'All In One un solo prodotto apporta Ca, KH e Mg in proporzioni fisse. Con il reattore di calcio l'apporto = portata × (valore effluente − valore in vasca).
 Prudenza: suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno, calcio e magnesio a step), segnala quando un valore sembra un errore di misura, e per problemi seri (morie, valori estremi) consiglia di verificare con un secondo test o un negoziante esperto.
@@ -1412,7 +1441,7 @@ function vAI(){
   if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
     <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li><li>Widget sulla schermata Home con KH, calcio, magnesio, fosfati, nitrati, nitriti, ammoniaca e prossima manutenzione</li>':''}</ul>
-    <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p><button class="btn sec" data-go="aiexp" style="width:100%;margin-top:6px">🤖 ${L('Usa la tua AI: esporta i dati della vasca','Use your own AI: export your tank data')}</button></div>`;
+    <p class="small mut">Disponibile con ReefNova Pro. Il resto dell'app resta gratuito e completo.</p><button class="btn sec" data-go="aiexp" style="width:100%;margin-top:6px">🤖 ${L('Usa la tua AI: esporta i dati della vasca','Use your own AI: export your tank data')}</button></div>`;
 
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
   if(!aiReady()) h+=`<div class="banner">Inserisci il codice di accesso in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
@@ -1473,7 +1502,7 @@ function vAISettings(){
     ${devMode()?`<label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Pro attivo</b><br><span class="small mut">Modalità sviluppatore: in futuro lo attiverà l'abbonamento</span></span><input type="checkbox" id="aiPro" ${isPro()?'checked':''} style="width:22px;height:22px"></label><hr>`:''}
     <div class="f"><label>Codice di accesso</label><input id="aiCodeIn" autocomplete="off" autocapitalize="characters" placeholder="es. MIRKO-7K4QX" value="${esc(aiCode())}"></div>
     <div class="row" style="margin-top:8px"><button class="btn sm" id="aiCodeSave">Salva</button><button class="btn sm sec" id="aiKeyTest">Prova connessione</button></div>
-    <div class="small mut" style="margin-top:6px">Il codice ti viene dato da Reef Log durante il test. Le richieste passano dal server di Reef Log: non serve un account del fornitore dell'AI.</div>
+    <div class="small mut" style="margin-top:6px">Il codice ti viene dato da ReefNova durante il test. Le richieste passano dal server di ReefNova: non serve un account del fornitore dell'AI.</div>
     ${devMode()?`<hr><div class="small" style="margin-bottom:6px"><b>Sviluppatore</b> · chiave personale: se presente ha la precedenza sul codice e chiama il fornitore direttamente.</div>
     <div class="f"><label>Fornitore</label><select disabled><option>${AI_PROVIDERS[aiCfg().provider].name}</option></select></div>
     <div class="f" style="margin-top:8px"><label>Modello (solo con chiave personale)</label><input id="aiModelIn" value="${esc(aiCfg().model||'')}" placeholder="${AI_PROVIDERS[aiCfg().provider].model}"></div>
@@ -1559,7 +1588,7 @@ function bindPro(){
 
 /* ---------- Guida ---------- */
 const GUIDE=[
- {id:'primi',i:'🚀',t:'Primi passi',b:`<p>Reef Log è pronta all'uso: i dati restano su questo dispositivo, senza account.</p>
+ {id:'primi',i:'🚀',t:'Primi passi',b:`<p>ReefNova è pronta all'uso: i dati restano su questo dispositivo, senza account.</p>
   <p>Per avere calcoli corretti apri <b>Menu → Impostazioni</b> e imposta:</p>
   <ol><li><b>Volume netto</b>: l'acqua reale di vasca e sump, tolte rocce e sabbia. Da questo numero dipendono consumi, dosi e batteri.</li>
   <li><b>Avvio / maturazione</b>: scegli il protocollo di avvio, oppure "Nessuno" se la vasca è già matura (vedi <a data-g="avvio">Avvio e maturazione</a>).</li>
@@ -1602,7 +1631,7 @@ const GUIDE=[
  {id:'notifiche',i:'🔔',t:'Notifiche',b:`<p>In <b>Impostazioni → Notifiche</b>:</p>
   <ul><li>attiva l'interruttore generale e concedi il permesso;</li><li>scegli l'orario;</li><li>scegli se avere anche un promemoria il giorno prima;</li><li>scegli se ricevere un richiamo ogni giorno quando una scadenza è in ritardo;</li><li>spunta <b>una per una</b> le scadenze che vuoi notificare;</li><li>negli <b>altri avvisi</b> scegli se ricevere quello del report settimanale e quello delle scorte in esaurimento.</li></ul>
   <p>Le notifiche arrivano anche ad app chiusa. Usa "Invia una notifica di prova" per controllare.</p>
-  <p><b>Se non arrivano</b>: nelle impostazioni Android di Reef Log controlla che le notifiche siano consentite e imposta la batteria su "Senza restrizioni". Su alcuni telefoni il risparmio energetico blocca gli avvisi programmati.</p>`},
+  <p><b>Se non arrivano</b>: nelle impostazioni Android di ReefNova controlla che le notifiche siano consentite e imposta la batteria su "Senza restrizioni". Su alcuni telefoni il risparmio energetico blocca gli avvisi programmati.</p>`},
  {id:'avvio',i:'🌱',t:'Avvio e maturazione',b:`<p>In <b>Impostazioni → Avvio e manutenzione</b> scegli come seguire la partenza della vasca:</p>
   <ul><li><b>Durata fissa</b> (per esempio Yorah, 4 settimane): giorno e settimana su un totale, con la barra di avanzamento;</li>
   <li><b>Fino alla fine del ciclo dell'azoto</b>: l'avvio si considera concluso quando ammoniaca (NH₄) e nitriti (NO₂) sono a zero in due test consecutivi;</li>
@@ -1616,8 +1645,8 @@ const GUIDE=[
   <p><b>Prima vs ora</b> confronta la prima foto con l'ultima, <b>Confronta</b> due foto a scelta: trascina il cursore per scoprire la più recente.</p>
   <p>Per confronti efficaci scatta sempre dallo stesso punto e con la stessa luce.</p>`},
  {id:'diario',i:'📓',t:'Diario',b:`<p>Il <b>Diario</b> raccoglie tutto ciò che succede in vasca: cambi d'acqua, dosi manuali, manutenzioni, inserimenti, letture TDS e note. Molte voci si creano da sole, per esempio quando premi "Fatto" o aggiungi un animale. Elimini una voce con 🗑 (due tocchi).</p>`},
- {id:'backup',i:'💾',t:'Backup e cambio telefono',b:`<p>I dati sono salvati <b>sul telefono</b>. Il modo più comodo per proteggerli è il <b>backup su Google Drive</b>, in <b>Menu → Backup</b>: premi <b>Collega Google Drive</b>, scegli il tuo account e da lì in poi l'app salva dati e foto una volta al giorno, se ci sono novità. Il backup finisce in una cartella nascosta del tuo Drive che vede solo Reef Log, quindi non ingombra i tuoi file.</p>
-  <p>Su un telefono nuovo installi Reef Log, vai in <b>Menu → Backup</b> e premi <b>Ho già un backup: ripristina</b> con lo stesso account. I dati del nuovo telefono vengono sostituiti da quelli del backup.</p>
+ {id:'backup',i:'💾',t:'Backup e cambio telefono',b:`<p>I dati sono salvati <b>sul telefono</b>. Il modo più comodo per proteggerli è il <b>backup su Google Drive</b>, in <b>Menu → Backup</b>: premi <b>Collega Google Drive</b>, scegli il tuo account e da lì in poi l'app salva dati e foto una volta al giorno, se ci sono novità. Il backup finisce in una cartella nascosta del tuo Drive che vede solo ReefNova, quindi non ingombra i tuoi file.</p>
+  <p>Su un telefono nuovo installi ReefNova, vai in <b>Menu → Backup</b> e premi <b>Ho già un backup: ripristina</b> con lo stesso account. I dati del nuovo telefono vengono sostituiti da quelli del backup.</p>
   <p>In più Android fa da solo un backup dei dati (senza foto) sul tuo account Google, che torna quando reinstalli l'app.</p>
   <p>Puoi anche usare i file:</p>
   <ul><li><b>Esporta JSON</b> crea un file con tutti i dati, foto comprese se la casella è spuntata, da salvare su Drive o nei Download;</li>
@@ -1646,8 +1675,8 @@ const GUIDE=[
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
  {id:'aiexp',i:'🤖',t:L('Esporta per AI','Export for AI'),b:L(`<p>In <b>Menu → Esporta per AI</b> l'app prepara un testo con i dati della vasca: ultimi valori con i range, storico dei test, consumi, dosaggio, cambi d'acqua, diario, alimentazione, animali e ultima analisi ICP. In cima ci sono le istruzioni per l'analisi.</p><p>Scegli il periodo, premi <b>📋 Copia</b> o <b>↗ Condividi</b> e incollalo in ChatGPT, Claude, Gemini o l'AI che preferisci; poi fai le tue domande. Prima di copiarlo puoi leggerlo e cancellare quello che non vuoi condividere.</p><p>È gratuito. Con il piano Pro l'assistente è dentro l'app: conosce già i dati e può registrare test, note e dosi.</p>`,`<p>In <b>Menu → Export for AI</b> the app prepares a text with your tank data: latest values with ranges, test history, consumption, dosing, water changes, log, feeding, livestock and the latest ICP analysis. At the top there are instructions for the analysis.</p><p>Choose the period, tap <b>📋 Copy</b> or <b>↗ Share</b> and paste it into ChatGPT, Claude, Gemini or the AI you prefer; then ask your questions. Before copying you can read it and delete anything you don't want to share.</p><p>It's free. With Pro the assistant is built into the app: it already knows your data and can log tests, notes and doses.</p>`)},
- {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere Reef Log sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>Reef Log</b> e trascinalo dove vuoi.</p>
-  <p>Il widget mostra gli ultimi valori di KH, calcio, magnesio, fosfati, nitrati, nitriti e ammoniaca (verdi se nel range, gialli o rossi se no; «–» se non li hai ancora misurati), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri Reef Log.</p>`},
+ {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere ReefNova sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>ReefNova</b> e trascinalo dove vuoi.</p>
+  <p>Il widget mostra gli ultimi valori di KH, calcio, magnesio, fosfati, nitrati, nitriti e ammoniaca (verdi se nel range, gialli o rossi se no; «–» se non li hai ancora misurati), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri ReefNova.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
   <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
@@ -1665,12 +1694,13 @@ function vGuida(){
   if(cur){ const i=GUIDE.indexOf(cur), prev=GUIDE[i-1], next=GUIDE[i+1];
     return `<div class="card guide"><h2 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--tx)">${cur.i} ${cur.t}</h2>${cur.b}</div>
       <div class="row" style="justify-content:space-between">${prev?`<button class="btn sm sec" data-go="guida-${prev.id}">‹ ${prev.t}</button>`:'<span></span>'}${next?`<button class="btn sm sec" data-go="guida-${next.id}">${next.t} ›</button>`:''}</div>
-      <div style="text-align:center;margin-top:10px"><button class="btn sm sec" data-go="guida">Tutti i capitoli</button></div>`; }
+      <div style="text-align:center;margin-top:10px"><button class="btn sm sec" data-go="guida">Tutti i capitoli</button> <button class="btn sm sec" data-go="feedback">✉️ ${L('Segnala un problema','Report a problem')}</button></div>`+`<div class="mitem" data-go="feedback" style="margin-top:14px"><i>✉️</i><div class="t"><b>${L('Non hai trovato la risposta?','Didn\'t find the answer?')}</b><span>${L('Segnala un problema o un\'idea','Report a problem or an idea')}</span></div><span class="mut">›</span></div>`; }
   const q=guideQ.trim().toLowerCase(), strip=h=>LANG==='en'?h.split(/<[^>]+>/).map(x=>tx(x.replace(/&nbsp;/g,' '))).join(' '):h.replace(/<[^>]+>/g,' ');
-  const L=GUIDE.filter(c=>!q||(tx(c.t)+' '+strip(c.b)).toLowerCase().includes(q));
+  const GL=GUIDE.filter(c=>!q||(tx(c.t)+' '+strip(c.b)).toLowerCase().includes(q));
   return `<div class="card"><input id="gQ" placeholder="Cerca nella guida (es. consumo, TDS, backup)" value="${esc(guideQ)}"></div>`+
-    (L.length?L.map(c=>`<div class="mitem" data-go="guida-${c.id}"><i>${c.i}</i><div class="t"><b>${c.t}</b>${q?`<span>${esc(snip(strip(c.b),q))}</span>`:''}</div><span class="mut">›</span></div>`).join(''):`<div class="card small mut">Nessun risultato per "${esc(guideQ)}".</div>`);
+    (GL.length?GL.map(c=>`<div class="mitem" data-go="guida-${c.id}"><i>${c.i}</i><div class="t"><b>${c.t}</b>${q?`<span>${esc(snip(strip(c.b),q))}</span>`:''}</div><span class="mut">›</span></div>`).join(''):`<div class="card small mut">Nessun risultato per "${esc(guideQ)}".</div>`);
 }
+
 function snip(t,q){ t=t.replace(/\s+/g,' '); const i=t.toLowerCase().indexOf(q); if(i<0) return ''; return (i>30?'…':'')+t.slice(Math.max(0,i-30),i+60)+'…' }
 function bindGuida(){
   const app=document.getElementById('app');
@@ -1727,7 +1757,7 @@ async function rescheduleNotif(){
       S.settings=data.settings; S.tasks=data.tasks; S.stock=data.stock;
       try{ for(const n of notifPlan()){ if(list.length>1) n.title=`${n.title} · ${tk.name}`; n.tank=tk.id; plan.push(n) } } finally { S.settings=keep.settings; S.tasks=keep.tasks; S.stock=keep.stock }
     }
-    if(reportOn()&&notifOn()&&S.settings.notifReport){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri Reef Log: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
+    if(reportOn()&&notifOn()&&S.settings.notifReport){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri ReefNova: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
     plan.sort((a,b)=>a.ts-b.ts); plan.splice(60);
     if(!plan.length) return;
     await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:tx(n.title),body:tx(n.body),schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
@@ -1764,7 +1794,7 @@ function bindNotif(){
   const on=document.getElementById('nOn'); if(!on) return; const LN=LNp();
   on.onchange=async()=>{
     if(on.checked){ let p=await LN.checkPermissions(); if(p.display!=='granted') p=await LN.requestPermissions();
-      if(p.display!=='granted'){ on.checked=false; toast('Permesso negato: abilitalo nelle impostazioni Android di Reef Log'); return }
+      if(p.display!=='granted'){ on.checked=false; toast('Permesso negato: abilitalo nelle impostazioni Android di ReefNova'); return }
       const first=!('notifOn' in S.settings);
       S.settings=Object.assign(clone(S.settings),{notifOn:true}); await saveSettings();
       if(first&&S.tasks.length&&!S.tasks.some(t=>t.notify)) toast('Ora scegli quali scadenze notificare'); }
@@ -1774,7 +1804,7 @@ function bindNotif(){
   const ov=document.getElementById('nOver'); if(ov) ov.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifOverdue:ov.checked}); await saveSettings() };
   document.querySelectorAll('[data-nx]').forEach(c=>c.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{[c.dataset.nx]:c.checked}); await saveSettings(); toast(c.checked?'Avviso attivato':'Avviso disattivato') });
   document.querySelectorAll('[data-ntask]').forEach(c=>c.onchange=async()=>{ const t=S.tasks.find(x=>x.id===c.dataset.ntask); if(!t) return; await saveItem('tasks',Object.assign(clone(t),{notify:c.checked})); toast(c.checked?'Notifica attivata':'Notifica disattivata') });
-  const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 Reef Log',body:tx('Le notifiche funzionano!'),schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
+  const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 ReefNova',body:tx('Le notifiche funzionano!'),schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
 }
 
 /* ---------- Animali e coralli ---------- */
@@ -1951,7 +1981,7 @@ window.addEventListener('online',()=>scheduleSync(300));
 window.addEventListener('offline',updHdr);
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleSync(300) });
 setInterval(()=>{ if(document.visibilityState==='visible') sync() },60000);
-function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`<div class="small mut" id="verTap" style="text-align:center;margin:4px 0 8px;user-select:none">Reef Log versione ${APP_VERSION}${devMode()?' · sviluppatore':''}</div>${LOCAL_ONLY?vDrive():''}  <div class="card"><h2>${LOCAL_ONLY&&CAP()?'Backup su file':'Backup'}</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
+function vSyncPage(){ let h=(LOCAL_ONLY?'':vSync())+`<div class="small mut" id="verTap" style="text-align:center;margin:4px 0 8px;user-select:none">ReefNova versione ${APP_VERSION}${devMode()?' · sviluppatore':''}</div>${LOCAL_ONLY?vDrive():''}  <div class="card"><h2>${LOCAL_ONLY&&CAP()?'Backup su file':'Backup'}</h2><div class="row"><button class="btn sec" id="exp">Esporta JSON</button><button class="btn sec" id="imp">Importa JSON</button><button class="btn sec" id="csv">Copia test in CSV</button></div>
   ${allPhotoMetas().length?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" id="bkPhotos" checked style="width:auto;margin-right:6px">Includi le ${allPhotoMetas().length} foto nel backup (file più grande)</label>`:''}
   <textarea id="expBox" class="hide" style="margin-top:8px;min-height:120px" readonly></textarea>
   <div class="small mut" style="margin-top:6px">${S.tests.length} test · ${S.doses.length} variazioni dose · ${S.events.length} voci diario · archivio ${S.mode==='db'?'sul tuo account (privato)':'locale'}.</div></div>`;
@@ -1996,7 +2026,7 @@ function render(){
   Object.values(charts).forEach(c=>c.destroy()); for(const k in charts) delete charts[k];
   const hdr=document.getElementById('hdrSub');
   hdr.innerHTML = hdrHtml();
-  const ht=document.getElementById('hdrTitle'); if(MULTI&&isPro()){ ht.innerHTML=`<button id="tankBtn" style="background:none;border:0;color:var(--tx);font:inherit;padding:0;display:flex;align-items:center;gap:6px;max-width:52vw"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(tankName())}</span><span style="color:var(--acc);font-size:14px">▾</span></button>`; document.getElementById('tankBtn').onclick=openTanks } else ht.textContent='Reef Log';
+  const ht=document.getElementById('hdrTitle'); if(MULTI&&isPro()){ ht.innerHTML=`<button id="tankBtn" style="background:none;border:0;color:var(--tx);font:inherit;padding:0;display:flex;align-items:center;gap:6px;max-width:52vw"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(tankName())}</span><span style="color:var(--acc);font-size:14px">▾</span></button>`; document.getElementById('tankBtn').onclick=openTanks } else ht.textContent='ReefNova';
   let h='';
   if(S.mode==='local' && S.ready && !sbUser && backupDue()) h+=`<div class="banner">I dati sono salvati su questo dispositivo. ${lastBackup()?`Ultimo backup ${Math.floor((Date.now()-lastBackup())/DAY)} giorni fa`:'Non hai ancora fatto un backup'}: <a href="#" data-go="sync" style="color:#ffd98a">esporta ora</a>.<button id="bkClose" style="float:right;background:none;border:0;color:#ffd98a;font-size:18px;line-height:1;padding:0 0 0 10px">✕</button></div>`;
   if(S.mode==='db' && S.stale && !S.tests.length && !S.doses.length) h+=`<div class="banner">Caricamento dati…</div>`;
@@ -2115,7 +2145,7 @@ function vHome(){
   const lt = S.tests.length? Math.max(...S.tests.map(t=>t.ts)) : null;
   let h='';
   if(!S.settings.welcomed && !(S.tests.length||S.doses.length||S.events.length||S.tasks.length||S.livestock.length||S.photos.length)){
-    h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
+    h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in ReefNova</h2>
       <div class="chips" data-noi18n style="margin:0 0 8px">${LANGS.map(([k,,l])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}" style="display:inline-flex;align-items:center;gap:6px">${flag(k,16)} ${l}</button>`).join('')}</div>
       <div class="f" style="margin:4px 0 10px"><label>Come ti chiami? (facoltativo)</label><input id="wName" placeholder="es. Mirko" value="${esc(userName())}"></div>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
@@ -2523,7 +2553,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={aiexp:L('Esporta per AI','Export for AI'),alimentazione:'Alimentazione',icp:'Analisi ICP',spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={feedback:L('Segnala un problema o un\'idea','Report a problem or an idea'),aiexp:L('Esporta per AI','Export for AI'),alimentazione:'Alimentazione',icp:'Analisi ICP',spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -2542,6 +2572,7 @@ const VIEWS={
   scorte:()=>backBar()+vScorte(),
   pdf:()=>backBar()+vPDF(),
   aiexp:()=>backBar()+vAIExp(),
+  feedback:()=>backBar()+vFeedback(),
   homecfg:vHomeCfg,
   spese:()=>backBar()+vSpese(),
   alimentazione:()=>backBar()+vFeed(),
@@ -2565,6 +2596,7 @@ function applyRoute(){
 }
 function go(target){
   if(target==='plus'){ openSheet(); return }
+  if(target==='feedback'&&view!=='feedback'){ fbFrom=fbSections().some(x=>x[0]===view)?view:(view==='homecfg'?'home':view==='report'?'ai':'altro') }
   if(ALIAS[target]) target=ALIAS[target];
   if(('#'+target)===location.hash || (target==='home'&&!location.hash)) applyRoute();
   else location.hash=target;
@@ -2590,6 +2622,7 @@ function vMenu(){
     ['pdf','📄','Report PDF','documento con valori, grafici e storico da condividere'],
     ['aiexp','🤖',L('Esporta per AI','Export for AI'),L('dati della vasca da incollare in ChatGPT, Claude, Gemini…','tank data to paste into ChatGPT, Claude, Gemini…')],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
+    ['feedback','✉️',L('Segnala un problema o un\'idea','Report a problem or an idea'),L('scrivi allo sviluppatore','write to the developer')],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
   return `<div style="margin-top:6px">`+items.map(([k,i,t,d])=>`<div class="mitem" data-go="${k}"><i>${i}</i><div class="t"><b>${t}</b><span>${d}</span></div><span class="mut">›</span></div>`).join('')+`</div>`;
@@ -2617,7 +2650,7 @@ function openSheet(){
 }
 function askExit(A){
   const el=document.getElementById('sheet');
-  el.innerHTML=`<div class="pane" style="max-width:340px;text-align:center"><div style="font-size:30px;margin-bottom:6px">🐠</div><b style="font-size:17px">Vuoi uscire da Reef Log?</b>
+  el.innerHTML=`<div class="pane" style="max-width:340px;text-align:center"><div style="font-size:30px;margin-bottom:6px">🐠</div><b style="font-size:17px">Vuoi uscire da ReefNova?</b>
     <div class="small mut" style="margin-top:6px">I dati restano salvati sul telefono.</div>
     <div class="row" style="margin-top:16px;justify-content:center"><button class="btn sec" id="exNo" style="flex:1">Resta</button><button class="btn" id="exYes" style="flex:1">Esci</button></div></div>`;
   el.classList.remove('hide'); el.onclick=e=>{ if(e.target===el) closeSheet() };
@@ -2692,7 +2725,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindAIExp(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindAIExp(); bindFeedback(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   const wn=document.getElementById('wName'); if(wn) wn.onchange=()=>setUserName(wn.value);
   if(wg) wg.onclick=async()=>{ if(wn) setUserName(wn.value); S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
@@ -2770,11 +2803,11 @@ function bind(){
       const withPh=document.getElementById('bkPhotos')?.checked; if(withPh&&S.photos.length) toast('Preparo le foto…');
       const photos=withPh? await photosForBackup() : undefined;
       const data=JSON.stringify({app:'reeflog',v:1,exported:new Date().toISOString(),...Object.fromEntries(COLLS.map(c=>[c,S[c]])),settings:S.settings,photos},null,1);
-      const fn=`reeflog-backup-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.json`;
+      const fn=`reefnova-backup-${MULTI&&tanks().length>1?tankName().toLowerCase().replace(/[^a-z0-9]+/g,'-')+'-':''}${new Date().toISOString().slice(0,10)}.json`;
       if(CAP()){ const r=await saveFile(fn,data,'application/json'); if(r==='shared'){ localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup pronto'); render(); return } if(r==='abort') return }
       try{ const dl=window.claude?.use? await window.claude.use('downloads'):null; if(dl){ await dl.save({filename:fn,data}); toast('Backup pronto'); return } }catch(err){}
       try{ const f=new File([data],fn,{type:'application/json'});
-        if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:'Backup Reef Log'}); localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup condiviso'); render(); return } }catch(err){ if(err&&err.name==='AbortError') return }
+        if(navigator.canShare&&navigator.canShare({files:[f]})){ await navigator.share({files:[f],title:'Backup ReefNova'}); localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup condiviso'); render(); return } }catch(err){ if(err&&err.name==='AbortError') return }
       try{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data],{type:'application/json'})); a.download=fn; document.body.appendChild(a); a.click(); a.remove(); localStorage.setItem('reeflog.lastBackup',Date.now()); toast('Backup scaricato'); render(); return }catch(err){}
       const box=document.getElementById('expBox'); box.value=data; box.classList.remove('hide'); box.select();
       try{ await navigator.clipboard.writeText(data); toast('Backup copiato negli appunti') }catch(err){ toast('Copia il testo qui sotto') }
@@ -2791,7 +2824,7 @@ function bind(){
 document.getElementById('fileIn').onchange=async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   let j; try{ j=JSON.parse(await f.text()) }catch(err){ toast('File non valido'); return }
-  if(!j||j.app!=='reeflog'){ toast('Non è un backup Reef Log'); return }
+  if(!j||j.app!=='reeflog'){ toast('Non è un backup ReefNova'); return }
   toast('Importazione in corso…');
   let n=0;
   for(const c of COLLS) for(const it of (j[c]||[])){ if(it&&it.id&&(['tasks','livestock','stock','gear'].includes(c)||isFinite(it.ts))){ if(S.mode==='db'){ try{ await base.collection(c).doc(String(it.id)).set(it); n++ }catch(err){ handleErr(err); return } } else { const a=S[c]; const i=a.findIndex(x=>x.id===it.id); if(i>=0)a[i]=it; else a.push(it); n++ } } }
