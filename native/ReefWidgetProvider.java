@@ -38,11 +38,13 @@ public class ReefWidgetProvider extends AppWidgetProvider {
             v.setOnClickPendingIntent(R.id.w_root, pi);
         }
         String raw = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("data", null);
+        en = !java.util.Locale.getDefault().getLanguage().equals("it");
         try {
-            if (raw == null) return message(v, "Apri Reef Log per attivare il widget");
+            if (raw == null) return message(v, L("Apri Reef Log per attivare il widget", "Open Reef Log to activate the widget"));
             JSONObject d = new JSONObject(raw);
+            if (d.has("lang")) en = "en".equals(d.optString("lang"));
             v.setTextViewText(R.id.w_title, d.optString("tank", "Reef Log"));
-            if (!d.optBoolean("pro", false)) return message(v, "Il widget è una funzione di Reef Log Pro");
+            if (!d.optBoolean("pro", false)) return message(v, L("Il widget è una funzione di Reef Log Pro", "The widget is a Reef Log Pro feature"));
             v.setViewVisibility(R.id.w_vals, View.VISIBLE);
             v.setViewVisibility(R.id.w_msg, View.GONE);
             JSONArray ps = d.optJSONArray("params");
@@ -53,11 +55,11 @@ public class ReefWidgetProvider extends AppWidgetProvider {
                 v.setTextColor(VALUES[i], color(p == null ? "" : p.optString("s")));
             }
             long lt = d.optLong("lastTest", 0);
-            v.setTextViewText(R.id.w_line1, lt > 0 ? "Ultimo test: " + ago(lt) : "Nessun test ancora");
+            v.setTextViewText(R.id.w_line1, lt > 0 ? L("Ultimo test: ", "Last test: ") + ago(lt) : L("Nessun test ancora", "No tests yet"));
             JSONObject nx = d.optJSONObject("next");
             v.setTextViewText(R.id.w_line2, nx == null ? "" : nx.optString("n") + " · " + due(nx.optLong("ts", 0)));
         } catch (Exception e) {
-            return message(v, "Apri Reef Log per aggiornare il widget");
+            return message(v, L("Apri Reef Log per aggiornare il widget", "Open Reef Log to update the widget"));
         }
         return v;
     }
@@ -94,16 +96,19 @@ public class ReefWidgetProvider extends AppWidgetProvider {
 
     static String ago(long ts) {
         long d = -daysFromToday(ts);
-        if (d <= 0) return "oggi";
-        if (d == 1) return "ieri";
-        return d + " giorni fa";
+        if (d <= 0) return L("oggi", "today");
+        if (d == 1) return L("ieri", "yesterday");
+        return d + L(" giorni fa", " days ago");
     }
 
     static String due(long ts) {
         long d = daysFromToday(ts);
-        if (d < 0) return "in ritardo di " + (-d) + (d == -1 ? " giorno" : " giorni");
-        if (d == 0) return "oggi";
-        if (d == 1) return "domani";
-        return "tra " + d + " giorni";
+        if (d < 0) return en ? (-d) + (d == -1 ? " day overdue" : " days overdue") : "in ritardo di " + (-d) + (d == -1 ? " giorno" : " giorni");
+        if (d == 0) return L("oggi", "today");
+        if (d == 1) return L("domani", "tomorrow");
+        return en ? "in " + d + " days" : "tra " + d + " giorni";
     }
+
+    static boolean en = false;
+    static String L(String it, String eng) { return en ? eng : it; }
 }

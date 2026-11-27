@@ -149,8 +149,74 @@ hr{border:0;border-top:1px solid var(--line);margin:12px 0}
 <input type="file" id="testPhotoIn" accept="image/*" class="hide">
 <div id="ov" class="ov hide"></div>
 
+<script src="i18n-en.js"></script>
 <script>
 "use strict";
+/* ---------- Lingua (IT/EN) ----------
+   Il testo italiano è la chiave: i18n-en.js contiene le traduzioni. In inglese ogni testo che compare
+   sullo schermo viene tradotto al volo; per grafici, PDF, notifiche e AI si usa tx(). Testi nuovi: L('it','en'). */
+const LANG=(()=>{ try{ const l=localStorage.getItem('reeflog.lang'); if(l==='it'||l==='en') return l }catch(e){} const n=(navigator.languages&&navigator.languages[0])||navigator.language||''; return /^it\b/i.test(n)?'it':'en' })();
+const LOC=LANG==='it'?'it-IT':'en-GB';
+function L(it,en){ return LANG==='en'?en:it }
+function aiLang(){ return LANG==='en'?'\n\nIMPORTANT: the app is set to English. Write everything meant for the user (answers, notes, comments, names, reports) in English, even though these instructions are in Italian.':'' }
+const I18={ex:new Map(),bk:new Map(),wild:[]};
+(function(){
+  const D=window.I18N_EN; if(LANG!=='en'||!D) return;
+  const reEsc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  for(const [k,v] of Object.entries(D)) if(!k.includes('{}')) I18.ex.set(k,v);
+  for(const [k,v] of Object.entries(D)){ if(!k.includes('{}')) continue;
+    const lit=k.split('{}');
+    if(!/\{\d/.test(v)){ const ev=v.split('{}'); if(ev.length===lit.length) lit.forEach((a,i)=>{ a=a.trim(); const b=ev[i].trim(); if(a.length>=4&&/[A-Za-zÀ-ÿ]{3}/.test(a)&&!I18.ex.has(a)) I18.ex.set(a,b) }) }
+    if(lit.join('').replace(/[^A-Za-zÀ-ÿ]/g,'').length<3) continue;
+    const t={re:new RegExp('^'+lit.map(reEsc).join('([\\s\\S]*?)')+'$'),v};
+    t.n=lit.join('').length; t.dot=k.includes(' · '); if(lit[0].length>=3){ const b=lit[0].slice(0,3); if(!I18.bk.has(b)) I18.bk.set(b,[]); I18.bk.get(b).push(t) } else I18.wild.push(t);
+  }
+  const by=(a,b)=>b.n-a.n; I18.wild.sort(by); for(const v of I18.bk.values()) v.sort(by);
+})();
+function tx(s,deep){
+  if(LANG!=='en'||s==null) return s; s=String(s);
+  const W=/^(\s*)([\s\S]*?)(\s*)$/.exec(s), k=W[2].replace(/\s+/g,' ');
+  if(!k||!/[A-Za-zÀ-ÿ]/.test(k)) return s;
+  const r=txCore(k,deep|0); return r==null?s:W[1]+r+W[3];
+}
+function txCore(k,d){
+  let r=I18.ex.get(k); if(r!=null) return r;
+  if(d>5) return null;
+  const c=k[0]; if(c!==c.toUpperCase()){ r=I18.ex.get(c.toUpperCase()+k.slice(1)); if(r!=null) return r[1]&&r[1]===r[1].toLowerCase()?r[0].toLowerCase()+r.slice(1):r }
+  const dot=k.includes(' · '), TL=(I18.bk.get(k.slice(0,3))||[]).concat(I18.wild);
+  const tpl=only=>{ for(const t of TL){ if(only&&!t.dot) continue; const m=t.re.exec(k); if(m){ let i=0; return t.v.replace(/\{(\d*)\}/g,(_,n)=>{ const g=m[(n===''?i++:+n)+1]; return g==null?'':tx(g,d+1) }) } } return null };
+  r=tpl(dot); if(r!=null) return r;
+  if(dot){ const a=k.split(' · '), o=a.map(x=>tx(x,d+1)); if(o.some((x,i)=>x!==a[i])) return o.join(' · '); r=tpl(false); if(r!=null) return r }
+  let m=/^([^A-Za-zÀ-ÿ0-9"«(]*)([\s\S]*?)([^A-Za-zÀ-ÿ0-9"»)…%]*)$/.exec(k);
+  if(m&&(m[1]||m[3])&&m[2]){ r=txCore(m[2].trim(),d+1); if(r!=null) return m[1]+r+m[3] }
+  m=/^(.+?) (\([^()]*\))$/.exec(k); if(m){ const a=tx(m[1],d+1), b=tx(m[2],d+1); if(a!==m[1]||b!==m[2]) return a+' '+b }
+  const u=k.replace(/\b(ppm|dKH|ml|mg|kg|g|L)\/g\b/g,'$1/d').replace(/(\d) gg\b/g,'$1 d'); if(u!==k) return u;
+  return null;
+}
+const I18_ATTR=['placeholder','title','aria-label','alt'], I18_DONE=new WeakMap();
+function i18Text(n){
+  const v=n.nodeValue; if(!v||I18_DONE.get(n)===v) return;
+  const p=n.parentNode; if(p&&p.tagName==='OPTION'&&!p.hasAttribute('value')) p.setAttribute('value',v.trim());
+  const m=/^(\s*)([\s\S]*?)(\s*)$/.exec(v), r=tx(m[2]); const nv=r===m[2]?v:m[1]+r+m[3];
+  I18_DONE.set(n,nv); if(nv!==v) n.nodeValue=nv;
+}
+function i18El(el){
+  if(el.tagName==='OPTION'&&!el.hasAttribute('value')) el.setAttribute('value',el.textContent.trim());
+  let st=I18_DONE.get(el); for(const a of I18_ATTR){ const v=el.getAttribute(a); if(v==null||(st&&st[a]===v)) continue; const r=tx(v); if(!st){ st={}; I18_DONE.set(el,st) } st[a]=r; if(r!==v) el.setAttribute(a,r) }
+}
+const I18_SKIP=n=>n.nodeType===1&&(/^(SCRIPT|STYLE)$/.test(n.tagName)||(n.tagName==='TEXTAREA'&&(i18El(n),true))||n.hasAttribute('data-noi18n')||n.classList.contains('bub'));
+function i18Walk(root){
+  if(root.nodeType===3){ const p=root.parentElement; if(p&&!(p.closest&&p.closest('script,style,textarea,[data-noi18n],.bub'))) i18Text(root); return }
+  if(root.nodeType!==1||I18_SKIP(root)||(root.closest&&root.closest('[data-noi18n],.bub'))) return;
+  i18El(root); const w=document.createTreeWalker(root,5,{acceptNode:n=>I18_SKIP(n)?2:1}); let n; while((n=w.nextNode())) n.nodeType===3?i18Text(n):i18El(n);
+}
+if(LANG==='en'&&window.I18N_EN){
+  document.documentElement.lang='en';
+  const go=()=>{ i18Walk(document.body); new MutationObserver(ms=>{ for(const m of ms){ if(m.type==='childList') m.addedNodes.forEach(i18Walk); else if(m.type==='characterData'){ const p=m.target.parentElement; if(p&&!(p.closest&&p.closest('script,style,textarea,[data-noi18n],.bub'))) i18Text(m.target) } else i18El(m.target) } }).observe(document.body,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:I18_ATTR}) };
+  if(document.body) go(); else document.addEventListener('DOMContentLoaded',go);
+  if(window.Chart){ const C0=window.Chart, fix=o=>{ if(!o||typeof o!=='object') return; for(const k in o){ const v=o[k]; if((k==='label'||k==='text')&&typeof v==='string') o[k]=tx(v); else if(v&&typeof v==='object'&&!(v instanceof Element)&&!ArrayBuffer.isView(v)&&k!=='data') fix(v) } };
+    window.Chart=class extends C0{ constructor(el,cfg){ if(cfg){ fix(cfg.options); (cfg.data&&cfg.data.datasets||[]).forEach(fix) } super(el,cfg) } } }
+}
 const LOCAL_ONLY=/*LOCAL_ONLY*/true; // true nella versione app Android (nessuna sincronizzazione online)
 const CAP=()=>window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()?window.Capacitor:null;
 /* ---------- Parametri ---------- */
@@ -167,6 +233,7 @@ const P = {
   nh4: {n:'Ammoniaca', u:'ppm', d:2, t:[0,0.05]},
   no2: {n:'Nitriti',   u:'ppm', d:2, t:[0,0.05]},
 };
+if(LANG==='en') for(const k in P) P[k].n=tx(P[k].n);
 const TRI = ['ca','kh','mg'];
 const TRI_COL = {ca:'#5aa9ff',kh:'#f08c3a',mg:'#b07cf2'};
 const DAY = 86400000;
@@ -191,9 +258,9 @@ const charts = {};
 function clone(o){return JSON.parse(JSON.stringify(o))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
 function num(v){ if(v===''||v==null) return null; const n = typeof v==='number'?v:parseFloat(String(v).replace(',','.')); return isFinite(n)?n:null }
-function fmt(v,d){ if(v==null||!isFinite(v)) return '–'; return v.toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:d}) }
-function fdate(ts,y){ return new Date(ts).toLocaleDateString('it-IT',y?{day:'2-digit',month:'short',year:'2-digit'}:{day:'2-digit',month:'short'}) }
-function ftime(ts){ return new Date(ts).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) }
+function fmt(v,d){ if(v==null||!isFinite(v)) return '–'; return v.toLocaleString(LOC,{minimumFractionDigits:0,maximumFractionDigits:d,useGrouping:LANG==='it'}) }
+function fdate(ts,y){ return new Date(ts).toLocaleDateString(LOC,y?{day:'2-digit',month:'short',year:'2-digit'}:{day:'2-digit',month:'short'}) }
+function ftime(ts){ return new Date(ts).toLocaleTimeString(LOC,{hour:'2-digit',minute:'2-digit'}) }
 function toInput(ts){ const d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16) }
 function fromInput(s){ const t = new Date(s).getTime(); return isFinite(t)?t:Date.now() }
 function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
@@ -368,7 +435,7 @@ function dueBadge(t){ const d=dueDiff(t);
   if(d===1) return `<span class="tag" style="color:#ffd98a">domani</span>`;
   return `<span class="tag">${fdate(nextDue(t))} · tra ${d} gg</span>` }
 function taskEveryDays(t){ return t.kind==='interval'? Math.max(1,num(t.every)||7) : 30/Math.max(1,(t.days||[]).length) }
-function cadence(t){ return t.kind==='interval'? `ogni ${num(t.every)||7} giorni` : `il ${(t.days||[]).join(' e il ')} di ogni mese` }
+function cadence(t){ return t.kind==='interval'? `ogni ${num(t.every)||7} giorni` : (LANG==='en'?`on day ${(t.days||[]).join(' and ')} of each month`:`il ${(t.days||[]).join(' e il ')} di ogni mese`) }
 function bacterMl(){ return (num(S.settings.bacterPer250)||5)*vol()/250 }
 function startMode(){ return S.settings.startMode || (S.settings.startDate?'fixed':'none') }
 function bacterOn(){ return S.settings.bacterOn ?? (startMode()==='fixed') }
@@ -454,7 +521,7 @@ function vFoto(){
   if(!S.photos.length) return h+`<div class="card mut small">Ancora nessuna foto. Scattane una oggi: tra qualche settimana sarà bello confrontarla.</div>`;
   let lastM='';
   h+=`<div class="card">`;
-  const groups={}; for(const p of S.photos){ const m=new Date(p.ts).toLocaleDateString('it-IT',{month:'long',year:'numeric'}); (groups[m]=groups[m]||[]).push(p) }
+  const groups={}; for(const p of S.photos){ const m=new Date(p.ts).toLocaleDateString(LOC,{month:'long',year:'numeric'}); (groups[m]=groups[m]||[]).push(p) }
   for(const m in groups){ h+=`<h2 style="margin-top:6px">${m}</h2><div class="pgrid" style="margin-bottom:10px">`;
     for(const p of groups[m]){ const i=sel?sel.indexOf(p.id):-1; h+=`<button class="ph ${i>=0?'sel':''}" data-ph="${p.id}"><img src="${p.thumb}" alt=""><span><em><strong>${fdate(p.ts)}</strong>${p.note?' · '+esc(p.note):(dayLabel(p.ts)?' · '+dayLabel(p.ts):'')}</em></span>${i>=0?`<b>${i+1}</b>`:''}</button>` }
     h+=`</div>` }
@@ -470,7 +537,7 @@ async function openViewer(id){
   const show=async()=>{
     ovUrls.forEach(u=>URL.revokeObjectURL(u)); ovUrls=[];
     const meta=list[idx]; const rec=await getPhoto(meta.id); const url=rec&&rec.blob?URL.createObjectURL(rec.blob):meta.thumb; if(rec&&rec.blob) ovUrls.push(url);
-    o.innerHTML=`<div class="top"><div style="flex:1"><b>${new Date(meta.ts).toLocaleDateString('it-IT',{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</b><div class="small" style="color:#bbb">${dayLabel(meta.ts)}${dayLabel(meta.ts)?' dall\'avvio · ':''}${idx+1} di ${list.length}</div></div>
+    o.innerHTML=`<div class="top"><div style="flex:1"><b>${new Date(meta.ts).toLocaleDateString(LOC,{weekday:'short',day:'numeric',month:'long',year:'numeric'})}</b><div class="small" style="color:#bbb">${dayLabel(meta.ts)}${dayLabel(meta.ts)?' dall\'avvio · ':''}${idx+1} di ${list.length}</div></div>
       ${isPro()?'<button class="btn sm" id="ovAI">✨ Analizza</button>':''}<button class="btn sm sec" id="ovDel">🗑</button><button class="btn sm sec" id="ovX">✕</button></div>
       <div class="stage"><img src="${url}" alt="">${idx<list.length-1?'<button class="nav" id="ovPrev" style="left:4px">‹</button>':''}${idx>0?'<button class="nav" id="ovNext" style="right:4px">›</button>':''}</div>
       <div class="row" style="margin-top:8px"><input id="ovNote" placeholder="Nota (es. nuovo corallo, alga in calo…)" value="${esc(meta.note)}" style="flex:1"><input type="date" id="ovDate" value="${toInput(meta.ts).slice(0,10)}" style="width:150px"></div>`;
@@ -574,6 +641,70 @@ function bindCatalog(){
       if(x) for(const p of TRI) f.elements[pre+p].value=String(x[p]).replace('.',',');
       if(x) toast('Valori compilati: premi Salva impostazioni') } }
 }
+/* ---------- Esporta per AI (gratuito): testo con i dati della vasca da incollare nella propria AI ---------- */
+let aixDays=90, aixTxt=null;
+function aiExportText(days){
+  const now=Date.now(), from=days?now-days*DAY:0, st=S.settings, d=ts=>new Date(ts).toLocaleDateString(LOC,{day:'2-digit',month:'2-digit',year:'numeric'});
+  const cell=v=>String(v??'').replace(/\|/g,'/').replace(/\s+/g,' ').trim();
+  const o=[], H=t=>o.push('','## '+t);
+  o.push(`# Reef Log · ${tx(tankName())} · ${L('dati esportati il','data exported on')} ${d(now)}`,'',
+    L("Sei un esperto di acquari marini di barriera. Qui sotto trovi i dati reali della mia vasca, esportati dall'app Reef Log. Analizzali e dimmi: come vanno i parametri e il loro andamento, se consumi e dosaggio di calcio, KH e magnesio sono in equilibrio, cosa potrebbe causare eventuali problemi e cosa dovrei controllare o correggere. Basati sui numeri e non inventare i dati che mancano (dimmi quale test fare). Suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno). Rispondi in italiano, poi resta disponibile per le mie domande.",
+      "You are an expert reef aquarist. Below is the real data from my tank, exported from the Reef Log app. Analyze it and tell me: how the parameters and their trends look, whether calcium, KH and magnesium consumption and dosing are balanced, what could cause any problems and what I should check or correct. Base your answer on the numbers and don't invent missing data (tell me which test to do). Suggest gradual corrections (KH no more than about 1 dKH per day). Then stay available for my questions."));
+  H(L('La vasca','The tank'));
+  o.push(`- ${L('Volume netto','Net volume')}: ${volSet()?vol()+' L':L('non impostato','not set')}`);
+  const si=startInfo();
+  o.push(`- ${L('Avvio','Start-up')}: ${si?(si.mode==='fixed'?L(`giorno ${si.day} di ${si.tot} (partita il ${d(si.st)})`,`day ${si.day} of ${si.tot} (started ${d(si.st)})`):L(`maturazione, giorno ${si.day}${si.done?', ciclo concluso':''}`,`cycling, day ${si.day}${si.done?', cycle complete':''}`)):L('vasca già matura','tank already mature')}`);
+  const m=dmode(), reg=curReg(now), pl=k=>productLabel(k)?' ('+productLabel(k)+')':'';
+  if(m==='aio') o.push(`- ${L('Dosaggio','Dosing')}: All In One${pl('aio')}, ${fmt(rateAt('kh',now),1)} ${L('ml al giorno','ml per day')}. ${L('1 ml in 100 L alza','1 ml in 100 L raises')} Ca ${st.aio?.ca||'?'} ppm, KH ${st.aio?.kh||'?'} dKH, Mg ${st.aio?.mg||'?'} ppm`);
+  else if(m==='reactor') o.push(`- ${L('Dosaggio','Dosing')}: ${L('reattore di calcio','calcium reactor')}${reg&&reg.kind==='reactor'?`, ${L('portata','flow')} ${reg.flow} ml/min, ${L('KH effluente','effluent KH')} ${reg.effKH} dKH${reg.effCa!=null?`, ${L('Ca effluente','effluent Ca')} ${reg.effCa} ppm`:''}${reg.mg?`, Mg ${reg.mg} ${L('ml al giorno','ml per day')}`:''}`:''}`);
+  else o.push(`- ${L('Dosaggio','Dosing')}: Balling ${L('3 parti','3-part')}${pl('balling')}, Ca ${fmt(rateAt('ca',now),1)} ml, KH ${fmt(rateAt('kh',now),1)} ml, Mg ${fmt(rateAt('mg',now),1)} ml ${L('al giorno','per day')}${st.conc&&(st.conc.ca||st.conc.kh||st.conc.mg)?`. ${L('Concentrazioni','Concentrations')}: Ca ${st.conc.ca||'?'} mg/ml, KH ${st.conc.kh||'?'} meq/ml, Mg ${st.conc.mg||'?'} mg/ml`:''}`);
+  H(L('Ultimi valori e range obiettivo','Latest values and target ranges'));
+  const lv=Object.keys(P).map(p=>[p,lastVal(p)]).filter(([,l])=>l);
+  if(lv.length){ o.push(`| ${L('Parametro','Parameter')} | ${L('Valore','Value')} | ${L('Data','Date')} | ${L('Range obiettivo','Target range')} |`,'|---|---|---|---|');
+    for(const [p,l] of lv){ const [lo,hi]=tgt(p); o.push(`| ${P[p].n} | ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} | ${d(l.ts)} | ${lo}–${hi} |`) } }
+  else o.push(L('Nessun test registrato.','No tests logged.'));
+  const T=S.tests.filter(t=>t.ts>=from).sort(byTs), ks=Object.keys(P).filter(p=>T.some(t=>num(t.v?.[p])!=null));
+  if(T.length){ H(L(`Storico dei test (${T.length})`,`Test history (${T.length})`));
+    o.push(`| ${L('Data','Date')} | ${ks.map(p=>P[p].n+(P[p].u?' ('+P[p].u+')':'')).join(' | ')} | ${L('Note','Notes')} |`,'|'+'---|'.repeat(ks.length+2));
+    for(const t of T) o.push(`| ${d(t.ts)} | ${ks.map(p=>{ const v=num(t.v?.[p]); return v==null?'':fmt(v,P[p].d) }).join(' | ')} | ${cell(t.note)} |`) }
+  const cons=TRI.map(p=>[p,avgCons(p)]).filter(([,c])=>c!=null);
+  if(cons.length){ H(L('Consumo medio (ultimi 30 giorni, calcolato da Reef Log)','Average consumption (last 30 days, calculated by Reef Log)')); for(const [p,c] of cons) o.push(`- ${P[p].n}: ${fmt(c,p==='kh'?2:1)} ${P[p].u} ${L('al giorno','per day')}`) }
+  const D=S.doses.filter(x=>x.ts>=from).sort(byTs);
+  if(D.length){ H(L('Variazioni della dose giornaliera','Daily dose changes')); for(const x of D) o.push(`- ${d(x.ts)}: ${tx(doseTxt(x))}${x.note?' · '+cell(x.note):''}`) }
+  const WC=S.events.filter(e=>e.type==='wc'&&e.ts>=from).sort(byTs);
+  if(WC.length){ H(L(`Cambi d'acqua (${WC.length})`,`Water changes (${WC.length})`)); for(const e of WC) o.push(`- ${d(e.ts)}: ${fmt(num(e.liters),1)} L${e.note?' · '+cell(e.note):''}`) }
+  const lab={maint:L('Manutenzione','Maintenance'),dose:L('Dose manuale','Manual dose'),note:L('Nota','Note'),live:L('Inserimento animali','Livestock added'),tds:'TDS',resin:L('Resine osmosi cambiate','RO resin replaced'),membr:L('Membrana osmosi cambiata','RO membrane replaced'),prefilt:L('Prefiltri osmosi cambiati','RO prefilters replaced')};
+  const MT=S.events.filter(e=>lab[e.type]&&e.ts>=from).sort(byTs);
+  if(MT.length){ H(L('Diario','Log')); for(const e of MT){ const dz=e.type==='dose'?TRI.filter(p=>num(e[p])).map(p=>`${p.toUpperCase()} ${fmt(num(e[p]),1)} ml`).join(', '):''; o.push(`- ${d(e.ts)}: ${lab[e.type]}${e.type==='tds'?' '+fmt(num(e.tds),0)+' ppm':''}${dz?' · '+dz:''}${e.note?' · '+cell(e.note):''}`) } }
+  const F=(S.feeds||[]).filter(f=>f.ts>=from);
+  if(F.length){ const c={}; for(const f of F) c[f.food]=(c[f.food]||0)+1; const wk=Math.max(1,((now-Math.min(...F.map(f=>f.ts)))/DAY)/7);
+    H(L('Alimentazione','Feeding')); o.push(`- ${F.length} ${L('pasti nel periodo','feedings in the period')} (${L('circa','about')} ${fmt(F.length/wk,1)} ${L('a settimana','per week')})`, `- ${Object.entries(c).sort((a,b)=>b[1]-a[1]).map(([k,v])=>cell(k)+' ×'+v).join(', ')}`) }
+  const al=lvAlive();
+  if(al.length){ H(L('Animali e coralli in vasca','Livestock in the tank')); for(const x of al) o.push(`- ${cell(x.name)}${x.species?' ('+cell(x.species)+')':''}${(num(x.qty)||1)>1?' ×'+x.qty:''} · ${tx((LV_CAT[x.cat||'other']||LV_CAT.other)[1])} · ${L('inserito il','added')} ${d(x.ts)}`) }
+  const I=icpList()[0];
+  if(I){ H(L(`Ultima analisi ICP (${d(I.ts)}${I.lab?', '+I.lab:''})`,`Latest ICP analysis (${d(I.ts)}${I.lab?', '+I.lab:''})`));
+    const v=ICP_EL.filter(e=>num(I.v?.[e[0]])!=null).map(e=>{ const x=num(I.v[e[0]]), sx=icpSt(e,x); return `${e[0]} ${fmt(x,3)} ${icpUnit(e[2])}${sx==='s-bad'?' ⚠'+L('fuori range','out of range'):sx==='s-warn'?' ('+L('da tenere d\'occhio','watch')+')':''}` });
+    o.push('- '+v.join(', ')) }
+  if(S.tasks.length){ H(L('Manutenzioni programmate','Scheduled maintenance')); for(const t of S.tasks) o.push(`- ${cell(tx(t.name))} · ${cadence(t)} · ${L('prossima','next')} ${d(nextDue(t))}`) }
+  return o.join('\n');
+}
+function vAIExp(){
+  aixTxt=aiExportText(aixDays);
+  return `<div class="card"><div class="small">${L("Prepara un testo con i dati della vasca da incollare nell'AI che preferisci (ChatGPT, Claude, Gemini…): ultimi valori, storico dei test, consumi, dosaggio, cambi d'acqua, diario, alimentazione e animali, con le istruzioni per l'analisi.","Prepares a text with your tank data to paste into the AI you prefer (ChatGPT, Claude, Gemini…): latest values, test history, consumption, dosing, water changes, log, feeding and livestock, with instructions for the analysis.")}</div>
+    <div class="chips" style="margin-top:10px" data-noi18n>${[[30,L('30 giorni','30 days')],[90,L('3 mesi','3 months')],[365,L('1 anno','1 year')],[0,L('Tutto','All')]].map(([n,l])=>`<button class="chip ${aixDays===n?'on':''}" data-aix="${n}">${l}</button>`).join('')}</div>
+    <div class="row" data-noi18n><button class="btn" id="axCopy" style="flex:1">📋 ${L('Copia','Copy')}</button><button class="btn sec" id="axShare" style="flex:1">↗ ${L('Condividi','Share')}</button></div>
+    <textarea id="axTxt" spellcheck="false" style="margin-top:10px;min-height:280px;font:12px/1.45 ui-monospace,Menlo,monospace">${esc(aixTxt)}</textarea>
+    <div class="small mut" style="margin-top:6px" data-noi18n>${L("Il testo resta sul telefono finché non lo incolli tu: puoi leggerlo e cancellare quello che non vuoi condividere. L'AI che scegli ha le sue regole sulla privacy.","The text stays on your phone until you paste it: you can read it and delete anything you don't want to share. The AI you choose has its own privacy rules.")}</div>
+    ${isPro()?'':`<div class="small" style="margin-top:10px" data-noi18n>✨ ${L("Con Reef Log Pro l'assistente è dentro l'app, conosce già i tuoi dati e può registrare test, note e dosi.","With Reef Log Pro the assistant is built into the app, already knows your data and can log tests, notes and doses.")}</div>`}</div>`;
+}
+function bindAIExp(){
+  document.querySelectorAll('[data-aix]').forEach(b=>b.onclick=()=>{ aixDays=+b.dataset.aix; render() });
+  const box=document.getElementById('axTxt'), val=()=>box?box.value:(aixTxt||'');
+  const cp=document.getElementById('axCopy'); if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(val()); toast(L('Copiato: incollalo nella tua AI','Copied: paste it into your AI')) }catch(e){ try{ box.focus(); box.select(); document.execCommand('copy'); toast(L('Copiato: incollalo nella tua AI','Copied: paste it into your AI')) }catch(e2){ toast(L('Seleziona il testo e copialo','Select the text and copy it')) } } };
+  const sh=document.getElementById('axShare'); if(sh) sh.onclick=async()=>{ const text=val(), C=CAP(), SH=C&&((C.Plugins&&C.Plugins.Share)||(C.registerPlugin&&C.registerPlugin('Share')));
+    try{ if(SH&&SH.share){ await SH.share({title:'Reef Log',text,dialogTitle:L('Condividi i dati della vasca','Share tank data')}); return } if(navigator.share){ await navigator.share({title:'Reef Log',text}); return } }catch(e){ if(e&&(e.name==='AbortError'||/cancel/i.test(e.message||''))) return }
+    cp&&cp.onclick() };
+}
 /* ---------- Report PDF (gratuito, generato sul telefono) ---------- */
 let pdfDays=90, _pdfBusy=false;
 function loadJsPDF(){ return window.jspdf?Promise.resolve():loadScript('jspdf.umd.min.js') }
@@ -582,20 +713,21 @@ function chartImg(p,from,to){
   { const d0=Math.min(...pts.map(q=>q.x)), pad=Math.max(2*DAY,(to-d0)*0.06); from=Math.max(from,d0-pad); to=to+pad }
   const c=document.createElement('canvas'); c.width=900; c.height=300; const [lo,hi]=tgt(p);
   const ch=new Chart(c,{type:'line',data:{datasets:[{data:pts,borderColor:'#0e7c8c',backgroundColor:'#0e7c8c',pointRadius:3,borderWidth:2,tension:.2},{data:[{x:from,y:lo},{x:to,y:lo}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1},{data:[{x:from,y:hi},{x:to,y:hi}],borderColor:'#3fa96c',borderDash:[6,4],pointRadius:0,borderWidth:1,fill:'-1',backgroundColor:'rgba(63,169,108,.08)'}]},
-    options:{animation:false,responsive:false,devicePixelRatio:1,plugins:{legend:{display:false}},scales:{x:{type:'linear',min:from,max:to,ticks:{color:'#444',maxTicksLimit:6,callback:v=>new Date(v).toLocaleDateString('it-IT',{day:'2-digit',month:'short'})},grid:{color:'#e5e5e5'}},y:{ticks:{color:'#444'},grid:{color:'#e5e5e5'}}}}});
+    options:{animation:false,responsive:false,devicePixelRatio:1,plugins:{legend:{display:false}},scales:{x:{type:'linear',min:from,max:to,ticks:{color:'#444',maxTicksLimit:6,callback:v=>new Date(v).toLocaleDateString(LOC,{day:'2-digit',month:'short'})},grid:{color:'#e5e5e5'}},y:{ticks:{color:'#444'},grid:{color:'#e5e5e5'}}}}});
   const w=document.createElement('canvas'); w.width=c.width; w.height=c.height; const g=w.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,w.width,w.height); g.drawImage(c,0,0);
   const url=w.toDataURL('image/jpeg',0.85); ch.destroy(); return url;
 }
 async function buildPDF(days){
   await loadJsPDF(); const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
   const W=210, M=14, now=Date.now(), from=days?now-days*DAY:Math.min(now,...S.tests.map(t=>t.ts)); let y=M;
-  const clean=t=>String(t??'').replace(/[₀-₉]/g,c=>'0123456789'[c.charCodeAt(0)-8320]).replace(/≈/g,'circa ').replace(/[^\x00-\xFF€–—…’“”]/g,'');
+  if(LANG==='en'){ const _t=doc.text.bind(doc); doc.text=(t,...a)=>_t(typeof t==='string'?tx(t):Array.isArray(t)?t.map(x=>tx(x)):t,...a) }
+  const clean=t=>String(tx(t)??'').replace(/[₀-₉]/g,c=>'0123456789'[c.charCodeAt(0)-8320]).replace(/≈/g,'circa ').replace(/[^\x00-\xFF€–—…’“”]/g,'');
   const page=()=>{ if(y>275){ doc.addPage(); y=M } };
   const h1=(t)=>{ page(); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(14,124,140); doc.text(clean(t),M,y); y+=7; doc.setTextColor(30); doc.setFont('helvetica','normal'); doc.setFontSize(10) };
   const line=(t,ind=0)=>{ const L=doc.splitTextToSize(clean(t),W-2*M-ind); for(const l of L){ page(); doc.text(l,M+ind,y); y+=5 } };
   // intestazione
   doc.setFillColor(7,19,28); doc.rect(0,0,W,30,'F'); doc.setTextColor(255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text('Reef Log',M,14);
-  doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.text(clean(`${MULTI&&tanks().length>1?tankName()+' · ':''}Report dal ${new Date(from).toLocaleDateString('it-IT')} al ${new Date(now).toLocaleDateString('it-IT')}`),M,22);
+  doc.setFontSize(11); doc.setFont('helvetica','normal'); doc.text(clean(`${MULTI&&tanks().length>1?tankName()+' · ':''}Report dal ${new Date(from).toLocaleDateString(LOC)} al ${new Date(now).toLocaleDateString(LOC)}`),M,22);
   y=40; doc.setTextColor(30); doc.setFontSize(10);
   h1('La vasca');
   const si=startInfo(), m=dmode(), reg=curReg(now);
@@ -605,7 +737,7 @@ async function buildPDF(days){
   y+=3; h1('Ultimi valori');
   doc.setFont('helvetica','bold'); doc.text('Parametro',M,y); doc.text('Valore',M+55,y); doc.text('Data',M+90,y); doc.text('Range',M+120,y); doc.text('Stato',M+155,y); y+=2; doc.setDrawColor(200); doc.line(M,y,W-M,y); y+=5; doc.setFont('helvetica','normal');
   for(const p of Object.keys(P)){ const l=lastVal(p); if(!l) continue; page(); const [lo,hi]=tgt(p), st=status(p,l.v);
-    doc.text(clean(P[p].n),M,y); doc.text(clean(`${fmt(l.v,P[p].d)} ${P[p].u}`),M+55,y); doc.text(new Date(l.ts).toLocaleDateString('it-IT'),M+90,y); doc.text(clean(`${lo} - ${hi}`),M+120,y);
+    doc.text(clean(P[p].n),M,y); doc.text(clean(`${fmt(l.v,P[p].d)} ${P[p].u}`),M+55,y); doc.text(new Date(l.ts).toLocaleDateString(LOC),M+90,y); doc.text(clean(`${lo} - ${hi}`),M+120,y);
     const [c,t]= st==='s-ok'?[[40,150,80],'nel range']:st==='s-warn'?[[200,140,0],'attenzione']:[[200,50,50],'fuori range']; doc.setTextColor(...c); doc.text(t,M+155,y); doc.setTextColor(30); y+=6 }
   // grafici
   const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]); let any=false;
@@ -615,14 +747,14 @@ async function buildPDF(days){
   const cons=TRI.map(p=>[p,avgCons(p)]).filter(([,c])=>c!=null);
   if(cons.length){ y+=2; h1('Consumi medi (ultimi 30 giorni)'); for(const [p,c] of cons) line(`${P[p].n}: ${fmt(c,p==='kh'?2:1)} ${P[p].u} al giorno`) }
   const D=S.doses.filter(d=>d.ts>=from).sort(byTs);
-  if(D.length){ y+=3; h1('Variazioni di dosaggio'); for(const d of D) line(`${new Date(d.ts).toLocaleDateString('it-IT')}: `+(d.kind==='aio'?`All In One ${fmt(num(d.aio),1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow),1)} ml/min, KH effluente ${fmt(num(d.effKH),1)}`:`Ca ${fmt(num(d.ca)||0,1)}, KH ${fmt(num(d.kh)||0,1)}, Mg ${fmt(num(d.mg)||0,1)} ml/g`)+(d.note?` - ${d.note}`:'')) }
+  if(D.length){ y+=3; h1('Variazioni di dosaggio'); for(const d of D) line(`${new Date(d.ts).toLocaleDateString(LOC)}: `+(d.kind==='aio'?`All In One ${fmt(num(d.aio),1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow),1)} ml/min, KH effluente ${fmt(num(d.effKH),1)}`:`Ca ${fmt(num(d.ca)||0,1)}, KH ${fmt(num(d.kh)||0,1)}, Mg ${fmt(num(d.mg)||0,1)} ml/g`)+(d.note?` - ${d.note}`:'')) }
   const WC=S.events.filter(e=>e.type==='wc'&&e.ts>=from).sort(byTs);
-  if(WC.length){ y+=3; h1(`Cambi d'acqua (${WC.length}, totale ${fmt(WC.reduce((a,e)=>a+(num(e.liters)||0),0),1)} L)`); for(const e of WC) line(`${new Date(e.ts).toLocaleDateString('it-IT')}: ${fmt(num(e.liters),1)} L${e.note?' - '+e.note:''}`) }
+  if(WC.length){ y+=3; h1(`Cambi d'acqua (${WC.length}, totale ${fmt(WC.reduce((a,e)=>a+(num(e.liters)||0),0),1)} L)`); for(const e of WC) line(`${new Date(e.ts).toLocaleDateString(LOC)}: ${fmt(num(e.liters),1)} L${e.note?' - '+e.note:''}`) }
   const MT=S.events.filter(e=>['maint','dose','note','live','tds'].includes(e.type)&&e.ts>=from).sort(byTs);
   if(MT.length){ y+=3; h1('Diario: manutenzioni e note'); const lab={maint:'Manutenzione',dose:'Dose manuale',note:'Nota',live:'Inserimento',tds:'TDS osmosi'};
-    for(const e of MT) line(`${new Date(e.ts).toLocaleDateString('it-IT')}: ${lab[e.type]}${e.type==='tds'?' '+fmt(num(e.tds),0)+' ppm':''}${e.note?' - '+e.note:''}`) }
-  const al=lvAlive(); if(al.length){ y+=3; h1('Animali e coralli in vasca'); for(const x of al) line(`${x.name}${x.species?' ('+x.species+')':''}${(num(x.qty)||1)>1?' x'+x.qty:''} - ${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]}, inserito il ${new Date(x.ts).toLocaleDateString('it-IT')}`) }
-  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Generato con Reef Log il ${new Date().toLocaleDateString('it-IT')} - pagina ${i} di ${n}`,M,292) }
+    for(const e of MT) line(`${new Date(e.ts).toLocaleDateString(LOC)}: ${tx(lab[e.type])}${e.type==='tds'?' '+fmt(num(e.tds),0)+' ppm':''}${e.note?' - '+e.note:''}`) }
+  const al=lvAlive(); if(al.length){ y+=3; h1('Animali e coralli in vasca'); for(const x of al) line(`${x.name}${x.species?' ('+x.species+')':''}${(num(x.qty)||1)>1?' x'+x.qty:''} - ${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]}, inserito il ${new Date(x.ts).toLocaleDateString(LOC)}`) }
+  const n=doc.getNumberOfPages(); for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(140); doc.text(`Generato con Reef Log il ${new Date().toLocaleDateString(LOC)} - pagina ${i} di ${n}`,M,292) }
   return doc.output('blob');
 }
 function vPDF(){
@@ -643,7 +775,7 @@ function bindPDF(){
 // ID client "Applicazione web" del progetto Google Cloud di Reef Log (non è un segreto)
 const GDRIVE_CLIENT='614386911434-t3jbfeuinrf359q9mkdkg22avies7i1g.apps.googleusercontent.com';
 const GD_SCOPE='https://www.googleapis.com/auth/drive.appdata', GD_API='https://www.googleapis.com/drive/v3', GD_UP='https://www.googleapis.com/upload/drive/v3';
-const GD_SKIP=/^reeflog\.(aikey|aicode|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget)/;
+const GD_SKIP=/^reeflog\.(aikey|aicode|dev|cursor|lastSync|queue|syncUser|lastBackup|gdrive|gcid|widget|lang)/;
 let GD_busy=false, GD_msg='', _slInit=false;
 function gdCfg(){ try{ return JSON.parse(lsGet('reeflog.gdrive')||'null')||{} }catch(e){ return {} } }
 function gdSet(o){ lsSet('reeflog.gdrive',JSON.stringify(Object.assign(gdCfg(),o))) }
@@ -732,10 +864,10 @@ let _wLast='';
 function widgetPush(){
   const C=CAP(); if(!C) return; const W=(C.Plugins&&C.Plugins.ReefWidget)||(C.registerPlugin&&C.registerPlugin('ReefWidget')); if(!W||!W.update) return;
   const now=Date.now(); const lt=S.tests.length?Math.max(...S.tests.map(t=>t.ts)):0;
-  const tk=[...S.tasks].filter(t=>t.on!==false).map(t=>({n:t.name,ts:nextDue(t)})).sort((a,b)=>a.ts-b.ts)[0]||null;
+  const tk=[...S.tasks].filter(t=>t.on!==false).map(t=>({n:tx(t.name),ts:nextDue(t)})).sort((a,b)=>a.ts-b.ts)[0]||null;
   const WN={kh:'KH',ca:'Ca',mg:'Mg',po4:'PO₄',no3:'NO₃',no2:'NO₂',nh4:'NH₄'};
   const params=['kh','ca','mg','po4','no3','no2','nh4'].map((p,i)=>{ const l=lastVal(p); return {n:WN[p],v:l?fmt(l.v,P[p].d):'–',u:i<3?P[p].u:'',s:l?status(p,l.v).replace('s-',''):''} });
-  const d=JSON.stringify({pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'Reef Log',params,lastTest:lt,next:tk});
+  const d=JSON.stringify({lang:LANG,pro:isPro(),tank:MULTI&&tanks().length>1?tankName():'Reef Log',params,lastTest:lt,next:tk});
   if(d===_wLast) return; _wLast=d; W.update({data:d}).catch(()=>{});
 }
 
@@ -768,7 +900,7 @@ function evClick(L){ return (evt)=>{ let best=null,bd=1e9; for(const m of L){ if
 const EXP_CAT=[['salt','🧂','Sale'],['supp','🧪','Integratori'],['live','🐠','Animali e coralli'],['gear','🔧','Attrezzatura'],['test','📏','Test e reagenti'],['food','🍤','Cibo'],['cons','📦','Consumabili'],['energy','⚡','Energia'],['other','•','Altro']];
 const STOCK_EXP={aio:'supp',ca:'supp',kh:'supp',mg:'supp',salt:'salt',reagent:'test',other:'cons'};
 let expRange='m', expEdit=null;
-function euro(v){ return (Math.round((v||0)*100)/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})+' €' }
+function euro(v){ return (Math.round((v||0)*100)/100).toLocaleString(LOC,{minimumFractionDigits:2,maximumFractionDigits:2})+' €' }
 function expFrom(r){ const d=new Date(); if(r==='m') return new Date(d.getFullYear(),d.getMonth(),1).getTime(); if(r==='y') return new Date(d.getFullYear(),0,1).getTime(); return -Infinity }
 function expCat(id){ return EXP_CAT.find(c=>c[0]===id)||EXP_CAT[EXP_CAT.length-1] }
 async function addExpense(o){ return saveItem('expenses',Object.assign({id:uid(),ts:Date.now(),cat:'other',desc:'',amount:0},o)) }
@@ -829,7 +961,7 @@ function vFeed(){
     <div class="small mut" style="margin-top:8px">Per un promemoria (es. coralli il martedì e il venerdì) crea una voce in <a href="#manut">Manutenzioni</a>. Per far scendere le scorte del cibo, in Scorte scegli «Si consuma con: Alimentazione».</div></div>`;
   h+=`<div class="card"><h2>Ultimi pasti</h2>`;
   if(!F.length) h+=`<div class="small mut">Nessun pasto registrato.</div>`;
-  else{ h+=`<div class="list">`; for(const f of F.slice(0,60)) h+=`<div class="it"><div class="body"><b>${feedLine(f)}</b><div class="small mut">${fdate(f.ts,true)} ${new Date(f.ts).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}${f.note?' · '+esc(f.note):''}</div></div><div class="acts"><button class="btn sm sec" data-feed="${f.id}">✎</button>${delBtn('feeds',f.id)}</div></div>`; h+=`</div>` }
+  else{ h+=`<div class="list">`; for(const f of F.slice(0,60)) h+=`<div class="it"><div class="body"><b>${feedLine(f)}</b><div class="small mut">${fdate(f.ts,true)} ${new Date(f.ts).toLocaleTimeString(LOC,{hour:'2-digit',minute:'2-digit'})}${f.note?' · '+esc(f.note):''}</div></div><div class="acts"><button class="btn sm sec" data-feed="${f.id}">✎</button>${delBtn('feeds',f.id)}</div></div>`; h+=`</div>` }
   h+=`</div>`;
   if(fav.length) h+=`<div class="card"><h2>Cibi preferiti</h2><div class="list">${fav.map((f,i)=>`<div class="it"><div class="body">${(FEED_WHO[f.who]||FEED_WHO.fish)[0]} ${esc(f.name)}${num(f.qty)?` · ${fmt(num(f.qty),1)} ${esc(f.unit||'')}`:''}</div><div class="acts"><button class="btn sm sec" data-fdel="${i}">🗑</button></div></div>`).join('')}</div></div>`;
   return h;
@@ -928,7 +1060,7 @@ async function icpComment(a){
   const L=icpList(), prev=L[L.indexOf(a)+1];
   const row=e=>{ const v=num(a.v?.[e[0]]); if(v==null) return null; const pv=prev?num(prev.v?.[e[0]]):null; return `${e[0]} (${e[1]}): ${v} ${icpUnit(e[2])} · rif. ${icpRange(e)}${pv!=null?` · prima ${pv}`:''} · ${({'s-ok':'ok','s-warn':'attenzione','s-bad':'fuori range'})[icpSt(e,v)]}` };
   const txt=ICP_EL.map(row).filter(Boolean).join('\n');
-  return aiText([{type:'text',text:`Analisi ICP del ${fdate(a.ts,true)} (${a.lab||'laboratorio'})${prev?`, confrontata con quella del ${fdate(prev.ts,true)}`:''}.\nVasca: ${volSet()?vol()+' L netti':'volume non indicato'}, dosaggio ${dmode()}.\n${txt}\n\nScrivi un commento in italiano, breve e pratico (massimo 12 righe): cosa va bene, cosa è fuori posto e perché può succedere, cosa verificare o correggere. Non indicare dosi precise di prodotti: suggerisci di seguire le indicazioni del produttore o del laboratorio. Niente tabelle, niente markdown.`}],aiSystem(),900);
+  return aiText([{type:'text',text:`Analisi ICP del ${fdate(a.ts,true)} (${a.lab||'laboratorio'})${prev?`, confrontata con quella del ${fdate(prev.ts,true)}`:''}.\nVasca: ${volSet()?vol()+' L netti':'volume non indicato'}, dosaggio ${dmode()}.\n${txt}\n\nScrivi un commento in ${LANG==='en'?'inglese (English)':'italiano'}, breve e pratico (massimo 12 righe): cosa va bene, cosa è fuori posto e perché può succedere, cosa verificare o correggere. Non indicare dosi precise di prodotti: suggerisci di seguire le indicazioni del produttore o del laboratorio. Niente tabelle, niente markdown.`}],aiSystem(),900);
 }
 function bindICP(){
   const $=id=>document.getElementById(id);
@@ -1106,7 +1238,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.13.0';
+const APP_VERSION='1.14.0';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1138,13 +1270,13 @@ function aiSave(){ // salva la conversazione senza le immagini (pesanti) e senza
 }
 
 function aiSystem(){
-  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef).${userName()?` L'utente si chiama ${userName()}: puoi chiamarlo per nome, senza esagerare.`:''} Rispondi sempre in italiano, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
+  return `Sei l'assistente di Reef Log, un'app italiana per la gestione di acquari marini (reef).${userName()?` L'utente si chiama ${userName()}: puoi chiamarlo per nome, senza esagerare.`:''} ${LANG==='en'?'Rispondi sempre in INGLESE (English)':'Rispondi sempre in italiano'}, in modo chiaro e conciso, adatto allo schermo di un telefono: frasi brevi, elenchi quando servono, niente tabelle larghe.
 Hai accesso ai dati reali della vasca dell'utente tramite gli strumenti: usali per basare le risposte sui suoi numeri invece che su considerazioni generiche. Non inventare valori: se un dato manca, dillo e suggerisci quale test fare.
 Come calcola l'app: il consumo giornaliero tra due test consecutivi = (valore iniziale + quanto dosato + effetto dei cambi d'acqua − valore finale) / giorni. Con l'All In One un solo prodotto apporta Ca, KH e Mg in proporzioni fisse. Con il reattore di calcio l'apporto = portata × (valore effluente − valore in vasca).
 Prudenza: suggerisci correzioni graduali (KH non oltre circa 1 dKH al giorno, calcio e magnesio a step), segnala quando un valore sembra un errore di misura, e per problemi seri (morie, valori estremi) consiglia di verificare con un secondo test o un negoziante esperto.
 Azioni: puoi proporre di aggiungere una nota, una scadenza, un test letto da una foto o di modificare la dose usando gli strumenti dedicati. L'utente vedrà una richiesta di conferma: proponi un'azione solo quando è utile o richiesta, e spiega prima il perché.
 Se ricevi una foto, descrivi cosa vedi con cautela (una foto non basta per una diagnosi certa), indica le ipotesi più probabili e collegale ai parametri (es. nitrati e fosfati per alghe, cyano e dinoflagellati).
-Oggi è ${new Date().toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}.
+Oggi è ${new Date().toLocaleDateString(LOC,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}.
 
 RIEPILOGO DELLA VASCA (aggiornato ora):
 ${aiOverview()}`;
@@ -1156,17 +1288,17 @@ function aiOverview(){
   o.push(`Volume netto: ${volSet()?vol()+' L':'non impostato (chiedi all\'utente di impostarlo)'}.`);
   { const F=(S.feeds||[]).filter(f=>f.ts>Date.now()-7*DAY); if(F.length){ const c={}; for(const f of F) c[f.food]=(c[f.food]||0)+1; o.push(`Alimentazione ultimi 7 giorni: ${F.length} pasti (${Object.entries(c).map(([k,v])=>k+' ×'+v).join(', ')}).`) } }
   { const I=icpList()[0]; if(I){ const bad=ICP_EL.filter(e=>{ const st=icpSt(e,num(I.v?.[e[0]])); return st==='s-bad'||st==='s-warn' }).map(e=>`${e[0]} ${num(I.v[e[0]])} ${icpUnit(e[2])}`); o.push(`Ultima analisi ICP ${fdate(I.ts,true)} (${I.lab||''}): ${bad.length?'fuori range o da controllare: '+bad.join(', '):'tutti gli elementi misurati nel range'}.`) } }
-  if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString('it-IT')}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
+  if(si) o.push(si.mode==='fixed'?`Avvio a durata fissa: giorno ${si.day} di ${si.tot} (partita il ${new Date(si.st).toLocaleDateString(LOC)}).`:`Maturazione fino a fine ciclo dell'azoto: giorno ${si.day}${si.done?', ciclo concluso':''}.`);
   else o.push('Vasca già matura (nessun avvio in corso).');
   const m=dmode();
   if(m==='aio') o.push(`Dosaggio: All In One${productLabel('aio')?' ('+productLabel('aio')+')':''}, ${fmt(rateAt('kh',now),1)} ml/giorno. 1 ml in 100 L alza: Ca ${s.aio?.ca||'?'} ppm, KH ${s.aio?.kh||'?'} dKH, Mg ${s.aio?.mg||'?'} ppm.`);
   else if(m==='reactor') o.push(`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${reg.flow} ml/min, KH effluente ${reg.effKH}${reg.effCa!=null?', Ca effluente '+reg.effCa:''}${reg.mg?', Mg integrato '+reg.mg+' ml/g':''}`:' (nessuna regolazione registrata)'}.`);
   else o.push(`Dosaggio: Balling 3 parti, Ca ${rateAt('ca',now)} ml/g, KH ${rateAt('kh',now)} ml/g, Mg ${rateAt('mg',now)} ml/g.`);
-  const vals=[]; for(const p of Object.keys(P)){ const l=lastVal(p); if(l){ const [lo,hi]=tgt(p); vals.push(`${P[p].n} ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} (${new Date(l.ts).toLocaleDateString('it-IT')}, range ${lo}–${hi})`) } }
+  const vals=[]; for(const p of Object.keys(P)){ const l=lastVal(p); if(l){ const [lo,hi]=tgt(p); vals.push(`${P[p].n} ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} (${new Date(l.ts).toLocaleDateString(LOC)}, range ${lo}–${hi})`) } }
   o.push(vals.length?'Ultimi valori: '+vals.join('; ')+'.':'Nessun test registrato.');
   const cons=TRI.map(p=>{ const c=avgCons(p); return c!=null?`${P[p].n} ${fmt(c,p==='kh'?2:1)} ${P[p].u}/g`:null }).filter(Boolean);
   if(cons.length) o.push('Consumo medio ultimi 30 giorni: '+cons.join(', ')+'.');
-  const wc=S.events.filter(e=>e.type==='wc').sort(byTs).pop(); if(wc) o.push(`Ultimo cambio d'acqua: ${new Date(wc.ts).toLocaleDateString('it-IT')}, ${wc.liters} L.`);
+  const wc=S.events.filter(e=>e.type==='wc').sort(byTs).pop(); if(wc) o.push(`Ultimo cambio d'acqua: ${new Date(wc.ts).toLocaleDateString(LOC)}, ${wc.liters} L.`);
   const al=lvAlive(); if(al.length) o.push(`Animali in vasca: ${al.map(x=>`${x.name}${(num(x.qty)||1)>1?' ×'+x.qty:''} (${(LV_CAT[x.cat||'other']||LV_CAT.other)[1]})`).join(', ')}.`);
   const lt=lastEv('tds'); if(lt) o.push(`Osmosi: ultimo TDS ${lt.tds} ppm.`);
   return o.join('\n');
@@ -1184,23 +1316,23 @@ const AI_TOOLS=[
  {name:'add_test',description:'Propone di registrare un test (per esempio letto da una foto del kit o di un referto). Valori con le chiavi dei parametri. Richiede conferma.',input_schema:{type:'object',properties:{values:{type:'object',description:'Es. {"kh":7.8,"ca":420}'},date:{type:'string',description:'Data ISO, se diversa da oggi'},note:{type:'string'}},required:['values']}},
 ];
 const AI_ACTIONS=new Set(['add_note','add_task','set_dose','add_test']);
-const dIt=ts=>new Date(ts).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+const dIt=ts=>new Date(ts).toLocaleString(LOC,{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
 function aiRead(name,inp){
   const since=d=>Date.now()-(d||60)*DAY;
   if(name==='get_tests'){ const T=S.tests.filter(t=>t.ts>=since(inp.days)).sort(byTs).map(t=>{ const v=inp.param?{[inp.param]:t.v[inp.param]}:t.v; return {data:dIt(t.ts),...v,...(t.note?{nota:t.note}:{})} }).filter(x=>!inp.param||x[inp.param]!=null); return T.length?T:'Nessun test nel periodo.' }
   if(name==='get_consumption'){ const I=intervals(inp.param); return I.length?I.slice(-10).map(x=>({da:dIt(x.t1),a:dIt(x.t2),giorni:r2(x.days,1),inizio:x.c1,fine:x.c2,dosato_effetto:r2(x.added,3),cambi_acqua_effetto:r2(x.wc,3),consumo_giornaliero:r2(x.cons,3)})):'Servono almeno due test.' }
   if(name==='get_dosing_history') return S.doses.filter(d=>d.ts>=since(inp.days||180)).sort(byTs).map(d=>({dal:dIt(d.ts),...d,id:undefined,ts:undefined}));
   if(name==='get_events') return S.events.filter(e=>e.ts>=since(inp.days)&&(!inp.type||e.type===inp.type)).sort(byTs).map(e=>({data:dIt(e.ts),...e,id:undefined,ts:undefined}));
-  if(name==='get_tasks') return S.tasks.map(t=>({nome:t.name,ricorrenza:cadence(t),ultima:t.lastDone?dIt(t.lastDone):null,prossima:new Date(nextDue(t)).toLocaleDateString('it-IT')}));
-  if(name==='get_livestock') return S.livestock.filter(x=>inp.include_lost||(x.status||'alive')==='alive').map(x=>({nome:x.name,specie:x.species||null,categoria:(LV_CAT[x.cat||'other']||LV_CAT.other)[1],quantita:x.qty||1,inserito:new Date(x.ts).toLocaleDateString('it-IT'),stato:LV_ST[x.status||'alive'],note:x.note||null}));
+  if(name==='get_tasks') return S.tasks.map(t=>({nome:t.name,ricorrenza:cadence(t),ultima:t.lastDone?dIt(t.lastDone):null,prossima:new Date(nextDue(t)).toLocaleDateString(LOC)}));
+  if(name==='get_livestock') return S.livestock.filter(x=>inp.include_lost||(x.status||'alive')==='alive').map(x=>({nome:x.name,specie:x.species||null,categoria:(LV_CAT[x.cat||'other']||LV_CAT.other)[1],quantita:x.qty||1,inserito:new Date(x.ts).toLocaleDateString(LOC),stato:LV_ST[x.status||'alive'],note:x.note||null}));
   return 'Strumento sconosciuto.';
 }
 function aiActionText(name,i){
   if(name==='add_note') return `Aggiungere al diario la nota:<br><i>"${esc(i.text)}"</i>`;
-  if(name==='add_task') return `Creare la scadenza <b>${esc(i.name)}</b>, ${i.month_days&&i.month_days.length?'il '+i.month_days.join(' e il ')+' di ogni mese':'ogni '+(i.every_days||7)+' giorni'}${i.water_change?' (cambio d\'acqua)':''}`;
+  if(name==='add_task') return `Creare la scadenza <b>${esc(i.name)}</b>, ${i.month_days&&i.month_days.length?L('il '+i.month_days.join(' e il ')+' di ogni mese','on day '+i.month_days.join(' and ')+' of each month'):'ogni '+(i.every_days||7)+' giorni'}${i.water_change?' (cambio d\'acqua)':''}`;
   if(name==='set_dose'){ const m=dmode(); const d= m==='aio'?`All In One <b>${fmt(num(i.aio_ml),1)} ml/g</b>`: m==='reactor'?`portata <b>${fmt(num(i.flow_ml_min),1)} ml/min</b>${i.effluent_kh!=null?', KH effluente '+fmt(num(i.effluent_kh),1):''}`:`Ca <b>${fmt(num(i.ca_ml),1)}</b>, KH <b>${fmt(num(i.kh_ml),1)}</b>, Mg <b>${fmt(num(i.mg_ml),1)}</b> ml/g`;
     return `Registrare una nuova dose da oggi: ${d}${i.reason?`<br><span class="mut">${esc(i.reason)}</span>`:''}` }
-  if(name==='add_test') return `Registrare un test${i.date?' del '+esc(new Date(i.date).toLocaleDateString('it-IT')):''}: `+Object.entries(i.values||{}).filter(([k])=>P[k]).map(([k,v])=>`${P[k].n} <b>${fmt(num(v),P[k].d)}</b>`).join(', ');
+  if(name==='add_test') return `Registrare un test${i.date?' del '+esc(new Date(i.date).toLocaleDateString(LOC)):''}: `+Object.entries(i.values||{}).filter(([k])=>P[k]).map(([k,v])=>`${P[k].n} <b>${fmt(num(v),P[k].d)}</b>`).join(', ');
   return name;
 }
 async function aiDoAction(name,i){
@@ -1217,7 +1349,7 @@ async function aiDoAction(name,i){
 async function aiCall(msgs,opt={}){
   const c=aiCfg(), key=aiKey(), code=aiCode(); if(!key&&!code) throw new Error('Manca il codice di accesso: inseriscilo in Impostazioni → Assistente AI.');
   if(c.provider!=='anthropic') throw new Error('Fornitore non supportato.');
-  const payload=JSON.stringify(Object.assign({model:aiModel(),max_tokens:opt.max||2048,system:opt.system||aiSystem(),messages:msgs},opt.noTools?{}:{tools:AI_TOOLS}));
+  const payload=JSON.stringify(Object.assign({model:aiModel(),max_tokens:opt.max||2048,system:(opt.system||aiSystem())+aiLang(),messages:msgs},opt.noTools?{}:{tools:AI_TOOLS}));
   let r,j;
   try{ r= key
       ? await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:payload})
@@ -1278,7 +1410,7 @@ function vAI(){
   if(!isPro()) return `<div class="card" style="border-color:var(--acc)"><h2>✨ Assistente AI · Pro</h2>
     <p class="small">Un assistente che conosce la tua vasca: legge test, consumi, dosi, manutenzioni e animali, e risponde sui tuoi numeri.</p>
     <ul class="small" style="padding-left:18px;line-height:1.6"><li>"Perché il KH scende?" con l'analisi dei tuoi consumi</li><li>Diagnosi da foto: alghe, cyano, dinoflagellati, stato dei coralli</li><li>Proposte di dose, note, scadenze e test letti da una foto, sempre con la tua conferma</li>${MULTI?'<li>Più vasche: quarantena, nano, vasca principale, ognuna con i suoi dati</li><li>Widget sulla schermata Home con KH, calcio, magnesio, fosfati, nitrati, nitriti, ammoniaca e prossima manutenzione</li>':''}</ul>
-    <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p></div>`;
+    <p class="small mut">Disponibile con Reef Log Pro. Il resto dell'app resta gratuito e completo.</p><button class="btn sec" data-go="aiexp" style="width:100%;margin-top:6px">🤖 ${L('Usa la tua AI: esporta i dati della vasca','Use your own AI: export your tank data')}</button></div>`;
 
   let h=`<div class="row" style="justify-content:space-between;margin:6px 0"><b style="font-size:17px">✨ Assistente</b><div class="row" style="gap:6px">${AI.msgs.length?'<button class="btn sm sec" id="aiNew">Nuova chat</button>':''}<button class="btn sm sec" data-go="impostazioni">⚙</button></div></div>`;
   if(!aiReady()) h+=`<div class="banner">Inserisci il codice di accesso in <a href="#" data-go="impostazioni" style="color:#ffd98a">Impostazioni → Assistente AI</a>.</div>`;
@@ -1288,7 +1420,7 @@ function vAI(){
     if(!Array.isArray(m.content)) continue;
     if(m.role==='user'){ if(m.content.some(b=>b.type==='tool_result')) continue;
       const t=m.content.filter(b=>b.type==='text').map(b=>b.text).join('\n'); const img=m._img||(m.content.some(b=>b.type==='image')||/\[foto allegata\]/.test(t)?'ph':null);
-      h+=`<div class="bub me">${m._img?`<img src="${m._img}" style="max-width:140px;border-radius:8px;display:block;margin-bottom:6px">`:img?'<div class="small mut">📷 foto allegata</div>':''}${esc(t.replace('[foto allegata]','').trim())}</div>`; continue }
+      h+=`<div class="bub me">${m._img?`<img src="${m._img}" style="max-width:140px;border-radius:8px;display:block;margin-bottom:6px">`:img?'<div class="small mut">'+L('📷 foto allegata','📷 photo attached')+'</div>':''}${esc(t.replace('[foto allegata]','').trim())}</div>`; continue }
     for(const b of m.content){
       if(b.type==='text'&&b.text.trim()) h+=`<div class="bub ai">${mdLite(b.text)}</div>`;
       else if(b.type==='tool_use'&&!AI_ACTIONS.has(b.name)) h+=`<div class="tchip">🔎 consultato: ${TOOL_LABEL[b.name]||b.name}</div>`;
@@ -1296,7 +1428,7 @@ function vAI(){
     }
   }
   if(AI.confirm) h+=`<div class="card" style="border-color:var(--warn)"><div class="small" style="margin-bottom:8px"><b>L'assistente propone di:</b><br>${aiActionText(AI.confirm.name,AI.confirm.input||{})}</div><div class="row"><button class="btn sm" id="aiYes">Conferma</button><button class="btn sm sec" id="aiNo">Annulla</button></div></div>`;
-  if(AI.busy&&!AI.confirm) h+=`<div class="bub ai mut">Sto analizzando…</div>`;
+  if(AI.busy&&!AI.confirm) h+=`<div class="bub ai mut">${L('Sto analizzando…','Analyzing…')}</div>`;
   if(AI.error) h+=`<div class="banner" style="background:#3a1717;border-color:#5a2323;color:#ffb4b4">${esc(AI.error)}</div>`;
   h+=`</div><div class="card" style="position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));padding:10px">
     ${AI.pendingImg?`<div class="row" style="margin-bottom:8px;flex-wrap:nowrap"><img src="${AI.pendingImg.thumb}" style="width:54px;height:54px;object-fit:cover;border-radius:8px"><span class="small mut" style="flex:1">${esc(AI.pendingImg.label||'Foto allegata')}</span><button class="btn sm sec" id="aiImgX">✕</button></div>`:''}
@@ -1348,7 +1480,7 @@ function vAISettings(){
     <div class="small mut" style="margin-top:6px">La chiave resta solo su questo dispositivo: non va nel backup né nella sincronizzazione.</div>`:''}
     <hr><label class="row" style="justify-content:space-between;flex-wrap:nowrap"><span><b>Report settimanale automatico</b><br><span class="small mut">Un riepilogo AI della vasca ogni settimana (circa 0,002 $ a report). L'avviso si sceglie in Notifiche.</span></span><input type="checkbox" id="repOn" ${aiCfg().report?'checked':''} style="width:22px;height:22px;flex:none"></label>
     ${aiCfg().report?`<div class="f" style="margin-top:8px"><label>Giorno del report</label><select id="repDay">${['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'].map((d,i)=>`<option value="${i}" ${reportDay()===i?'selected':''}>${d}</option>`).join('')}</select></div>`:''}
-    <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString('it-IT',{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
+    <hr><div class="small">Utilizzo: <b>${u.n}</b> richieste · ${Math.round(u.in/1000)}k token in ingresso, ${Math.round(u.out/1000)}k in uscita · costo stimato <b>${aiCost(u).toLocaleString(LOC,{style:'currency',currency:'USD',minimumFractionDigits:4,maximumFractionDigits:4})}</b> <button class="btn sm sec" id="aiUsageReset" style="margin-left:6px">Azzera</button></div>
     ${devMode()?'<hr><button class="btn sm sec" id="devOff">Esci dalla modalità sviluppatore</button>':''}</div>`;
 }
 
@@ -1374,7 +1506,7 @@ async function recognizeSpecies(blob){
   const others=lvAlive().map(x=>`${x.name}${x.species?' ('+x.species+')':''}`).join(', ')||'nessuno';
   const t=await aiText([{type:'image',source:{type:'base64',media_type:'image/jpeg',data:img.data}},{type:'text',text:`Identifica il pesce, corallo o invertebrato principale in questa foto di un acquario marino.
 Animali già presenti in vasca: ${others}. Volume vasca: ${vol()} L.
-Rispondi SOLO con JSON: {"name":"nome comune italiano","species":"nome scientifico","cat":"fish|sps|lps|soft|inv|cuc|other","confidence":"alta|media|bassa","note":"in una o due frasi: luce, movimento, difficoltà e compatibilità con gli animali presenti e con il volume"}`}],'Sei un esperto di acquariologia marina. Rispondi solo in JSON, in italiano.',700);
+Rispondi SOLO con JSON: {"name":"nome comune ${LANG==='en'?'inglese (English)':'italiano'}","species":"nome scientifico","cat":"fish|sps|lps|soft|inv|cuc|other","confidence":"alta|media|bassa","note":"in una o due frasi: luce, movimento, difficoltà e compatibilità con gli animali presenti e con il volume"}`}],'Sei un esperto di acquariologia marina. Rispondi solo in JSON, in italiano.',700);
   return parseJSON(t);
 }
 // report settimanale: generato all'apertura dell'app nel giorno scelto (o dopo), se attivo
@@ -1402,9 +1534,9 @@ function vReport(){
   const R=reports();
   let h=`<div class="card"><div class="row" style="justify-content:space-between"><span class="small mut">${reportOn()?`Automatico ogni ${['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'][reportDay()]}`:'Report automatico disattivato'}</span><button class="btn sm" id="repNow" ${_repBusy?'disabled':''}>${_repBusy?'Genero…':'Genera ora'}</button></div></div>`;
   if(!R.length) return h+`<div class="card small mut">Nessun report ancora.</div>`;
-  h+=`<div class="card"><h2>📋 ${new Date(R[0].ts).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'})}</h2><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(R[0].text)}</div>
+  h+=`<div class="card"><h2>📋 ${new Date(R[0].ts).toLocaleDateString(LOC,{weekday:'long',day:'numeric',month:'long'})}</h2><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(R[0].text)}</div>
     <button class="btn sm sec" data-aiask="Parliamo del report settimanale di oggi: approfondisci i punti da fare." style="margin-top:8px">✨ Approfondisci con l'assistente</button></div>`;
-  for(const r of R.slice(1)) h+=`<details class="card"><summary>${new Date(r.ts).toLocaleDateString('it-IT',{day:'numeric',month:'long',year:'numeric'})}</summary><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(r.text)}</div></details>`;
+  for(const r of R.slice(1)) h+=`<details class="card"><summary>${new Date(r.ts).toLocaleDateString(LOC,{day:'numeric',month:'long',year:'numeric'})}</summary><div class="bub ai" style="max-width:100%;border:0;padding:0;background:none">${mdLite(r.text)}</div></details>`;
   return h;
 }
 function homeReport(){
@@ -1511,6 +1643,7 @@ const GUIDE=[
   <p>Per la <b>foto della vasca</b> tocca una delle foto che hai caricato in Vasca → Foto: comparirà in cima alla Home con il nome della vasca e da quanti giorni è avviata. Con <b>✂ Ritaglia per la Home</b> scegli solo la parte che ti interessa (per esempio togliendo il mobile o la finestra): il ritaglio usa i pixel originali, quindi resta nitido, e la foto nella galleria non cambia. Ogni vasca ha la sua Home.</p>`},
  {id:'pdf',i:'📄',t:'Report PDF',b:`<p>In <b>Menu → Report PDF</b> scegli il periodo (30 giorni, 3 mesi, 1 anno o tutto) e premi <b>Crea il report PDF</b>. Il documento contiene i dati della vasca, gli ultimi valori con il confronto ai range, i grafici dei parametri, i consumi della triade, le variazioni di dosaggio, i cambi d'acqua, le manutenzioni e gli animali.</p>
   <p>Il PDF si crea sul telefono, senza inviare dati, e si condivide da Android: WhatsApp, email, Drive o un forum.</p>`},
+ {id:'aiexp',i:'🤖',t:L('Esporta per AI','Export for AI'),b:L(`<p>In <b>Menu → Esporta per AI</b> l'app prepara un testo con i dati della vasca: ultimi valori con i range, storico dei test, consumi, dosaggio, cambi d'acqua, diario, alimentazione, animali e ultima analisi ICP. In cima ci sono le istruzioni per l'analisi.</p><p>Scegli il periodo, premi <b>📋 Copia</b> o <b>↗ Condividi</b> e incollalo in ChatGPT, Claude, Gemini o l'AI che preferisci; poi fai le tue domande. Prima di copiarlo puoi leggerlo e cancellare quello che non vuoi condividere.</p><p>È gratuito. Con il piano Pro l'assistente è dentro l'app: conosce già i dati e può registrare test, note e dosi.</p>`,`<p>In <b>Menu → Export for AI</b> the app prepares a text with your tank data: latest values with ranges, test history, consumption, dosing, water changes, log, feeding, livestock and the latest ICP analysis. At the top there are instructions for the analysis.</p><p>Choose the period, tap <b>📋 Copy</b> or <b>↗ Share</b> and paste it into ChatGPT, Claude, Gemini or the AI you prefer; then ask your questions. Before copying you can read it and delete anything you don't want to share.</p><p>It's free. With Pro the assistant is built into the app: it already knows your data and can log tests, notes and doses.</p>`)},
  {id:'widget',i:'📱',t:'Widget (Pro)',b:`<p>Con il piano Pro puoi mettere Reef Log sulla schermata Home del telefono: tieni premuto su uno spazio vuoto, scegli <b>Widget</b>, cerca <b>Reef Log</b> e trascinalo dove vuoi.</p>
   <p>Il widget mostra gli ultimi valori di KH, calcio, magnesio, fosfati, nitrati, nitriti e ammoniaca (verdi se nel range, gialli o rossi se no; «–» se non li hai ancora misurati), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri Reef Log.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
@@ -1523,7 +1656,7 @@ const GUIDE=[
   <p><b>Le notifiche non arrivano.</b> Vedi <a data-g="notifiche">Notifiche</a>: permesso e risparmio energetico.</p>
   <p><b>Ho cambiato telefono.</b> Vedi <a data-g="backup">Backup e cambio telefono</a>.</p>`},
 ];
-const HELP_FOR={homecfg:'homecfg',alimentazione:'alimentazione',icp:'icp',spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
+const HELP_FOR={aiexp:'aiexp',homecfg:'homecfg',alimentazione:'alimentazione',icp:'icp',spese:'spese',pdf:'pdf',scorte:'scorte',attrezzatura:'attrezzatura',report:'ai',ai:'ai',home:'home',param:'test',vasca:'animali',menu:'navigazione',dosi:'triade',manut:'manut',osmosi:'osmosi',diario:'diario',impostazioni:'primi',sync:'backup',guida:''};
 let guideQ='';
 function vGuida(){
   const cur=GUIDE.find(c=>c.id===sub);
@@ -1531,8 +1664,8 @@ function vGuida(){
     return `<div class="card guide"><h2 style="font-size:16px;text-transform:none;letter-spacing:0;color:var(--tx)">${cur.i} ${cur.t}</h2>${cur.b}</div>
       <div class="row" style="justify-content:space-between">${prev?`<button class="btn sm sec" data-go="guida-${prev.id}">‹ ${prev.t}</button>`:'<span></span>'}${next?`<button class="btn sm sec" data-go="guida-${next.id}">${next.t} ›</button>`:''}</div>
       <div style="text-align:center;margin-top:10px"><button class="btn sm sec" data-go="guida">Tutti i capitoli</button></div>`; }
-  const q=guideQ.trim().toLowerCase(), strip=h=>h.replace(/<[^>]+>/g,' ');
-  const L=GUIDE.filter(c=>!q||(c.t+' '+strip(c.b)).toLowerCase().includes(q));
+  const q=guideQ.trim().toLowerCase(), strip=h=>LANG==='en'?h.split(/<[^>]+>/).map(x=>tx(x.replace(/&nbsp;/g,' '))).join(' '):h.replace(/<[^>]+>/g,' ');
+  const L=GUIDE.filter(c=>!q||(tx(c.t)+' '+strip(c.b)).toLowerCase().includes(q));
   return `<div class="card"><input id="gQ" placeholder="Cerca nella guida (es. consumo, TDS, backup)" value="${esc(guideQ)}"></div>`+
     (L.length?L.map(c=>`<div class="mitem" data-go="guida-${c.id}"><i>${c.i}</i><div class="t"><b>${c.t}</b>${q?`<span>${esc(snip(strip(c.b),q))}</span>`:''}</div><span class="mut">›</span></div>`).join(''):`<div class="card small mut">Nessun risultato per "${esc(guideQ)}".</div>`);
 }
@@ -1561,11 +1694,11 @@ function notifPlan(){
     for(let k=0;k<12&&due<=until;k++){
       const dd=Math.round((due-day0(now))/DAY);
       if(dd<0){ // scaduta: richiamo quotidiano per 7 giorni
-        if(overdue) for(let j=0;j<7;j++){ const ts=atTime(addDays(day0(now),j)); if(ts>now) out.push({ts,title:`⚠️ ${t.name}`,body:`In ritardo di ${-dd+j} giorn${-dd+j===1?'o':'i'}${extra}`,task:t.id}) }
+        if(overdue) for(let j=0;j<7;j++){ const ts=atTime(addDays(day0(now),j)); if(ts>now) out.push({ts,title:`⚠️ ${t.name}`,body:L(`In ritardo di ${-dd+j} giorn${-dd+j===1?'o':'i'}`,`${-dd+j} day${-dd+j===1?'':'s'} overdue`)+extra,task:t.id}) }
       }else{
         const ts=atTime(due); if(ts>now) out.push({ts,title:`🐠 ${t.name}`,body:`Da fare oggi${extra}`,task:t.id});
         if(before){ const tb=atTime(addDays(due,-1)); if(tb>now) out.push({ts:tb,title:`Domani: ${t.name}`,body:`Promemoria per domani${extra}`,task:t.id}) }
-        if(overdue&&k===0){ const nd=nextDue(Object.assign(clone(tt),{lastDone:due+12*3600000})); for(let j=1;j<=6;j++){ const tr=atTime(addDays(due,j)); if(tr>=atTime(nd)) break; if(tr>now) out.push({ts:tr,title:`⚠️ ${t.name}`,body:`Non ancora segnata come fatta (${j} giorn${j===1?'o':'i'} di ritardo)${extra}`,task:t.id,ifNotDone:true}) } }
+        if(overdue&&k===0){ const nd=nextDue(Object.assign(clone(tt),{lastDone:due+12*3600000})); for(let j=1;j<=6;j++){ const tr=atTime(addDays(due,j)); if(tr>=atTime(nd)) break; if(tr>now) out.push({ts:tr,title:`⚠️ ${t.name}`,body:L(`Non ancora segnata come fatta (${j} giorn${j===1?'o':'i'} di ritardo)`,`Not marked as done yet (${j} day${j===1?'':'s'} overdue)`)+extra,task:t.id,ifNotDone:true}) } }
       }
       if(dd<0) break;
       tt.lastDone=due+12*3600000; due=nextDue(tt);
@@ -1595,12 +1728,12 @@ async function rescheduleNotif(){
     if(reportOn()&&notifOn()&&S.settings.notifReport){ const d=new Date(); d.setHours(0,0,0,0); for(let i=0,k=0;i<35&&k<4;i++){ const x=addDays(d.getTime(),i); if(new Date(x).getDay()===reportDay()){ const ts=atTime(x); if(ts>Date.now()){ plan.push({ts,title:'📋 Report settimanale',body:'Apri Reef Log: il riepilogo della settimana ti aspetta',task:'report',tank:curTank()}); k++ } } } }
     plan.sort((a,b)=>a.ts-b.ts); plan.splice(60);
     if(!plan.length) return;
-    await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:n.title,body:n.body,schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
+    await LN.schedule({notifications:plan.map((n,i)=>({id:i+1,title:tx(n.title),body:tx(n.body),schedule:{at:new Date(n.ts),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6',extra:{task:n.task,tank:n.tank}}))});
   }catch(e){ console.warn('notifiche',e) }
 }
 async function initNotif(){
   const LN=LNp(); if(!LN) return;
-  try{ await LN.createChannel({id:'scadenze',name:'Scadenze acquario',description:'Cambi d\'acqua, test e manutenzioni',importance:4,visibility:1,vibration:true}) }catch(e){}
+  try{ await LN.createChannel({id:'scadenze',name:tx('Scadenze acquario'),description:tx('Cambi d\'acqua, test e manutenzioni'),importance:4,visibility:1,vibration:true}) }catch(e){}
   try{ LN.addListener('localNotificationActionPerformed',a=>{ const tk=a&&a.notification&&a.notification.extra&&a.notification.extra.tank; if(tk&&tk!==curTank()&&tanks().some(x=>x.id===tk)) switchTank(tk); go('manut') }) }catch(e){}
   rescheduleNotif();
   document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') scheduleNotif() });
@@ -1639,7 +1772,7 @@ function bindNotif(){
   const ov=document.getElementById('nOver'); if(ov) ov.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{notifOverdue:ov.checked}); await saveSettings() };
   document.querySelectorAll('[data-nx]').forEach(c=>c.onchange=async()=>{ S.settings=Object.assign(clone(S.settings),{[c.dataset.nx]:c.checked}); await saveSettings(); toast(c.checked?'Avviso attivato':'Avviso disattivato') });
   document.querySelectorAll('[data-ntask]').forEach(c=>c.onchange=async()=>{ const t=S.tasks.find(x=>x.id===c.dataset.ntask); if(!t) return; await saveItem('tasks',Object.assign(clone(t),{notify:c.checked})); toast(c.checked?'Notifica attivata':'Notifica disattivata') });
-  const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 Reef Log',body:'Le notifiche funzionano!',schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
+  const ts=document.getElementById('nTest'); if(ts) ts.onclick=async()=>{ try{ await LN.schedule({notifications:[{id:999,title:'🐠 Reef Log',body:tx('Le notifiche funzionano!'),schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},channelId:'scadenze',smallIcon:'ic_stat_reef',iconColor:'#2ec4d6'}]}); toast('Arriva tra 3 secondi') }catch(e){ toast('Errore: '+(e.message||e)) } };
 }
 
 /* ---------- Animali e coralli ---------- */
@@ -1647,7 +1780,7 @@ const LV_CAT={fish:['🐠','Pesci'],sps:['🪸','Coralli SPS'],lps:['🪸','Cora
 const LV_ST={alive:'In vasca',dead:'Perso',gone:'Ceduto'};
 let lvFilter='alive', lvEdit=null, lvPendingPhoto=null;
 function lvAlive(){ return S.livestock.filter(x=>(x.status||'alive')==='alive') }
-function eur(v){ return v==null?'–':v.toLocaleString('it-IT',{style:'currency',currency:'EUR',maximumFractionDigits:v%1?2:0}) }
+function eur(v){ return v==null?'–':v.toLocaleString(LOC,{style:'currency',currency:'EUR',maximumFractionDigits:v%1?2:0}) }
 function lvCost(x){ return (num(x.price)||0) }
 function lvThumb(x){ const p=x.photo&&S.lvPhotos[x.photo]; return p?p.thumb:null }
 function vAnimali(){
@@ -1887,15 +2020,15 @@ function greetStatus(){
   const ps=(S.settings.showParams||Object.keys(P)).filter(p=>P[p]);
   const off=ps.map(p=>[p,lastVal(p)]).filter(([p,l])=>l&&status(p,l.v)!=='s-ok');
   const bad=off.filter(([p,l])=>status(p,l.v)==='s-bad');
-  if(bad.length) out.push(`<span style="color:var(--bad)">${bad.slice(0,2).map(([p])=>P[p].n).join(' e ')} fuori range</span>`);
-  else if(off.length) out.push(`<span style="color:var(--warn)">${off.slice(0,2).map(([p])=>P[p].n).join(' e ')} da tenere d'occhio</span>`);
+  if(bad.length) out.push(`<span style="color:var(--bad)">${bad.slice(0,2).map(([p])=>P[p].n).join(L(' e ',' and '))} fuori range</span>`);
+  else if(off.length) out.push(`<span style="color:var(--warn)">${off.slice(0,2).map(([p])=>P[p].n).join(L(' e ',' and '))} da tenere d'occhio</span>`);
   const si=startInfo(); if(si&&si.show&&!si.done) out.push(si.mode==='fixed'?`giorno ${si.day} di ${si.tot} dell'avvio`:`giorno ${si.day} di maturazione`);
   if(!S.tests.length) out.push('inserisci il primo test');
   else{ const lt=Math.max(...S.tests.map(t=>t.ts)), d=Math.floor((day0(now)-day0(lt))/DAY); if(d>=7) out.push(`ultimo test ${d} giorni fa`) }
   if(!out.length||(out.length===1&&/avvio|maturazione/.test(out[0]))) out.unshift('<span style="color:var(--ok)">tutto nel range ✓</span>');
   return out.join(' · ');
 }
-function homeGreet(){ const n=userName(); return `<div style="margin:2px 4px 12px"><div style="font-size:20px;font-weight:700">${greetWord()}${n?' '+esc(n):''}</div><div class="small" style="margin-top:3px">${greetStatus()}</div></div>` }
+function homeGreet(){ const n=userName(); return `<div style="margin:2px 4px 12px"><div style="font-size:20px;font-weight:700">${greetWord()}${n?' <span>'+esc(n)+'</span>':''}</div><div class="small" style="margin-top:3px">${greetStatus()}</div></div>` }
 /* ---------- Home personalizzabile (ogni vasca la sua) ---------- */
 const HOME_BLOCKS=[['greet','👋','Saluto e situazione','buongiorno con il tuo nome e cosa c\'è da guardare'],['photo','📷','Foto della vasca'],['start','🌱','Avvio / maturazione','compare solo durante l\'avvio'],['report','📋','Report settimanale AI','commento automatico dell\'assistente AI (Pro): non è il Report PDF'],['todo','✅','Da fare','compare solo quando c\'è qualcosa in scadenza'],['values','🧪','Ultimi valori'],['dosing','💧','Dosaggio della triade']];
 function homeCfg(){ return Object.assign({order:[],hide:{},photo:null},S.settings.home||{}) }
@@ -1981,9 +2114,10 @@ function vHome(){
   let h='';
   if(!S.settings.welcomed && !(S.tests.length||S.doses.length||S.events.length||S.tasks.length||S.livestock.length||S.photos.length)){
     h+=`<div class="card" style="border-color:var(--acc)"><h2>Benvenuto in Reef Log</h2>
+      <div class="chips" data-noi18n style="margin:0 0 8px">${[['it','🇮🇹 Italiano'],['en','🇬🇧 English']].map(([k,l])=>`<button class="chip ${LANG===k?'on':''}" data-lang="${k}">${l}</button>`).join('')}</div>
       <div class="f" style="margin:4px 0 10px"><label>Come ti chiami? (facoltativo)</label><input id="wName" placeholder="es. Mirko" value="${esc(userName())}"></div>
       <div class="small">Tutto è già pronto e i dati restano su questo dispositivo. Per calcoli corretti imposta tre cose:</div>
-      <div class="small" style="margin:8px 0 0 2px;line-height:1.7">1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)</div>
+      <div class="small" style="margin:8px 0 0 2px;line-height:1.7" data-noi18n>${L('1. il <b>volume netto</b> della vasca<br>2. il <b>metodo di avvio</b> (o "nessuno" se è già matura)<br>3. il <b>prodotto per la triade</b> (Balling o All In One)','1. the <b>net volume</b> of the tank<br>2. the <b>start-up method</b> (or "none" if it\'s already mature)<br>3. the <b>Ca/KH/Mg product</b> (Balling or All In One)')}</div>
       <div class="row" style="margin-top:10px"><button class="btn sm" id="wGo">Apri impostazioni</button><button class="btn sm sec" data-go="guida-primi">📖 Guida</button><button class="btn sm sec" id="wX">Più tardi</button></div></div>`;
   }
   const B={}; let bs='';
@@ -2250,7 +2384,7 @@ function vDiario(){
 
 function vSet(){
   const s=S.settings;
-  let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Tu</h2><div class="f"><label>Il tuo nome (per il saluto in Home, vale per tutte le vasche)</label><input name="uname" placeholder="es. Mirko" value="${esc(userName())}"></div></div><div class="card"><h2>Vasca</h2>
+  let h=vAISettings()+vNotif()+`<form id="fSet"><div class="card"><h2>Tu</h2><div class="f"><label>Il tuo nome (per il saluto in Home, vale per tutte le vasche)</label><input name="uname" placeholder="es. Mirko" value="${esc(userName())}"></div><div class="f" style="margin-top:10px"><label data-noi18n>Lingua · Language</label><select id="langSel" data-noi18n><option value="it" ${LANG==='it'?'selected':''}>Italiano</option><option value="en" ${LANG==='en'?'selected':''}>English</option></select></div></div><div class="card"><h2>Vasca</h2>
     <div class="row"><div class="f"><label>Volume netto d'acqua (L)</label><input name="volume" inputmode="decimal" placeholder="es. 200" value="${esc(String(s.volume??'').replace('.',','))}"></div></div>
     <div class="small mut" style="margin-top:4px">Volume reale (vasca + sump, tolte rocce e sabbia). Influisce su tutti i calcoli.</div></div>
   <div class="card"><h2>Avvio e manutenzione</h2>
@@ -2309,7 +2443,7 @@ function vSet(){
 
 /* ---------- Grafici ---------- */
 const AX={ticks:{color:'#8aa7b6',font:{size:11}},grid:{color:'#1f415355'}};
-function chartDefaults(){ Chart.defaults.color='#8aa7b6'; Chart.defaults.locale='it-IT';
+function chartDefaults(){ Chart.defaults.color='#8aa7b6'; Chart.defaults.locale=LOC;
   Chart.defaults.plugins.tooltip.callbacks.title=items=>{ const x=items&&items[0]&&items[0].parsed&&items[0].parsed.x; return x>1e11?fdate(x,true):(items[0]?.label||'') } }
 // serie diverse sullo stesso grafico: segni concentrici (anello, rombo, punto…), così valori uguali nello stesso giorno restano tutti visibili
 const MARKS=[{pointStyle:'circle',pointRadius:8.5,hollow:1},{pointStyle:'rectRot',pointRadius:5.5,hollow:1},{pointStyle:'circle',pointRadius:2.8},{pointStyle:'triangle',pointRadius:11,hollow:1},{pointStyle:'rect',pointRadius:13,hollow:1}];
@@ -2353,7 +2487,7 @@ function drawCharts(){
 }
 function drawSpark(){
   const el=document.getElementById('spark'); if(!el) return; if(!window.Chart){ el.outerHTML='<p class="mut small">Grafico non disponibile offline.</p>'; return }
-  Chart.defaults.locale='it-IT'; const from=Date.now()-60*DAY, T=testsWith('kh').filter(t=>t.ts>=from);
+  Chart.defaults.locale=LOC; const from=Date.now()-60*DAY, T=testsWith('kh').filter(t=>t.ts>=from);
   if(!T.length){ el.parentElement.innerHTML='<h2>KH ultimi 60 giorni</h2><p class="mut small">Nessun test KH nel periodo.</p>'; return }
   const [lo,hi]=tgt('kh');
   charts.spark=new Chart(el,{type:'line',data:{datasets:[{data:T.map(t=>({x:t.ts,y:num(t.v.kh)})),borderColor:'#f08c3a',backgroundColor:'#f08c3a',pointRadius:3,tension:.25,borderWidth:2},
@@ -2387,7 +2521,7 @@ function drawTds(){
 let sub=''; const lastSub={};
 const SUBS={param:[['nuovo','Nuovo test'],['grafici','Grafici'],['storico','Storico']],vasca:[['animali','Animali e coralli'],['foto','Foto']]};
 const ALIAS={test:'param-nuovo',graf:'param-grafici',foto:'vasca-foto',animali:'vasca-animali',set:'impostazioni'};
-const MENU_VIEWS={alimentazione:'Alimentazione',icp:'Analisi ICP',spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
+const MENU_VIEWS={aiexp:L('Esporta per AI','Export for AI'),alimentazione:'Alimentazione',icp:'Analisi ICP',spese:'Spese',homecfg:'Personalizza la Home',pdf:'Report PDF',scorte:'Scorte e consumabili',attrezzatura:'Attrezzatura',report:'Report settimanale',ai:'Assistente AI',guida:'Guida',dosi:'Dosaggio',manut:'Manutenzione',osmosi:'Osmosi',diario:'Diario',impostazioni:'Impostazioni',sync:LOCAL_ONLY?'Backup':'Sincronizzazione e backup'};
 function segBar(v){ return `<div class="seg">${SUBS[v].map(([k,l])=>`<button class="${k===sub?'on':''}" data-sub="${k}">${l}</button>`).join('')}</div>` }
 function backBar(){ return `<div class="back"><button data-go="menu">‹ Menu</button><h1>${MENU_VIEWS[view]}</h1></div>` }
 const VIEWS={
@@ -2405,6 +2539,7 @@ const VIEWS={
   ai:vAI,
   scorte:()=>backBar()+vScorte(),
   pdf:()=>backBar()+vPDF(),
+  aiexp:()=>backBar()+vAIExp(),
   homecfg:vHomeCfg,
   spese:()=>backBar()+vSpese(),
   alimentazione:()=>backBar()+vFeed(),
@@ -2438,19 +2573,20 @@ function vMenu(){
   const lt=lastEv('tds'); const curAio=rateAt('kh',Date.now());
   const items=[
     ['dosi','💧','Dosaggio',isAIO()?`All In One · ${fmt(curAio,1)} ml/g`:isReactor()?`Reattore di calcio · ${fmt(curAio,1)} ml/min`:'Balling 3 parti · consumi e dosi'],
-    ['manut','🔧','Manutenzione',S.tasks.length?(over?`${over} scadut${over>1?'e':'a'}`:today?`${today} da fare oggi`:'tutto in regola'):'scadenze e calendario'],
+    ['manut','🔧','Manutenzione',S.tasks.length?(over?L(`${over} scadut${over>1?'e':'a'}`,`${over} overdue`):today?`${today} da fare oggi`:'tutto in regola'):'scadenze e calendario'],
     ['osmosi','🚰','Osmosi',lt?`ultimo TDS ${fmt(num(lt.tds),0)} ppm · ${tdsState(num(lt.tds))[1]}`:'TDS, resine, membrana'],
     ['diario','📓','Diario',`${S.events.length} ${S.events.length===1?'voce':'voci'} · cambi, dosi, note`],
     ['impostazioni','⚙️','Impostazioni','vasca, avvio, prodotti, range'],
     ['homecfg','🏠','Personalizza la Home','scegli e riordina i riquadri, foto della vasca'],
     ['ai','✨','Assistente AI',isPro()?(aiReady()?'chiedi qualcosa sulla tua vasca':'da configurare'):'funzione Pro'],
-    ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`):'sale, prodotti, reagenti'],
-    ['attrezzatura','🔌','Attrezzatura',S.gear.length?`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`:'pompe, plafoniera, schiumatoio…'],
+    ['scorte','📦','Scorte e consumabili',S.stock.length?(stockAlerts().length?`${stockAlerts().length} in esaurimento o scadenza`:L(`${S.stock.length} prodott${S.stock.length===1?'o':'i'} · tutto in ordine`,`${S.stock.length} product${S.stock.length===1?'':'s'} · all good`)):'sale, prodotti, reagenti'],
+    ['attrezzatura','🔌','Attrezzatura',S.gear.length?L(`${S.gear.length} apparecch${S.gear.length===1?'io':'i'}`,`${S.gear.length} device${S.gear.length===1?'':'s'}`):'pompe, plafoniera, schiumatoio…'],
     ...(reportOn()?[['report','📋','Report settimanale',reports().length?'ultimo '+fdate(reports()[0].ts):'in arrivo']]:[]),
     ['alimentazione','🍤','Alimentazione','pasti di pesci e coralli, cibi preferiti'],
     ['icp','🔬','Analisi ICP',isPro()?'analisi di laboratorio, confronto nel tempo':'funzione Pro'],
     ['spese','💶','Spese','quanto spendi in sale, integratori, animali, attrezzatura'],
     ['pdf','📄','Report PDF','documento con valori, grafici e storico da condividere'],
+    ['aiexp','🤖',L('Esporta per AI','Export for AI'),L('dati della vasca da incollare in ChatGPT, Claude, Gemini…','tank data to paste into ChatGPT, Claude, Gemini…')],
     ['guida','📖','Guida','come funziona l\'app · domande frequenti'],
     LOCAL_ONLY?['sync','💾','Backup',lastBackup()?`ultimo ${fdate(lastBackup(),true)}`:'esporta o importa i tuoi dati']:['sync','☁️','Sincronizzazione e backup',sbUser?syncLabel():'non collegato · backup JSON'],
   ];
@@ -2554,7 +2690,7 @@ function bind(){
     if(photoSel){ const i=photoSel.indexOf(id); if(i>=0) photoSel.splice(i,1); else photoSel.push(id);
       if(photoSel.length===2){ const [x,y]=photoSel; photoSel=null; render(); openCompare(x,y); return } render(); return }
     openViewer(id) });
-  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
+  bindSync(); bindAnimali(); bindNotif(); bindGuida(); bindAI(); bindStockGear(); bindPro(); bindCatalog(); bindPDF(); bindAIExp(); bindDrive(); bindHomeCfg(); bindSpese(); bindFeed(); bindICP();
   const wg=document.getElementById('wGo'), wx=document.getElementById('wX');
   const wn=document.getElementById('wName'); if(wn) wn.onchange=()=>setUserName(wn.value);
   if(wg) wg.onclick=async()=>{ if(wn) setUserName(wn.value); S.settings=Object.assign(clone(S.settings),{welcomed:true}); await saveSettings(); go('impostazioni') };
@@ -2643,7 +2779,7 @@ function bind(){
     };
     document.getElementById('csv').onclick=async()=>{
       const ks=Object.keys(P); const rows=[['data',...ks,'note'].join(';')];
-      for(const t of [...S.tests].sort(byTs)) rows.push([new Date(t.ts).toLocaleString('it-IT'),...ks.map(k=>t.v[k]!=null?String(t.v[k]).replace('.',','):''),'"'+(t.note||'').replace(/"/g,'""')+'"'].join(';'));
+      for(const t of [...S.tests].sort(byTs)) rows.push([new Date(t.ts).toLocaleString(LOC),...ks.map(k=>t.v[k]!=null?(LANG==='it'?String(t.v[k]).replace('.',','):String(t.v[k])):''),'"'+(t.note||'').replace(/"/g,'""')+'"'].join(';'));
       const box=document.getElementById('expBox'); box.value=rows.join('\n'); box.classList.remove('hide');
       try{ await navigator.clipboard.writeText(box.value); toast('CSV copiato') }catch(err){ box.select(); toast('Copia il testo qui sotto') }
     };
@@ -2688,6 +2824,9 @@ window.addEventListener('popstate',()=>{ if(!document.getElementById('ov').class
     askExit(A);
   });
 })();
+function setLang(l){ if(l===LANG) return; const wn=document.getElementById('wName'); if(wn&&wn.value.trim()) setUserName(wn.value); lsSet('reeflog.lang',l); location.reload() }
+document.addEventListener('change',e=>{ if(e.target&&e.target.id==='langSel') setLang(e.target.value) });
+document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-lang]'); if(b) setLang(b.dataset.lang) });
 applyRoute(); initStore(); initNotif(); setTimeout(gdAuto,4000); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(gdAuto,2500); else if(gdAvail()) widgetPush() }); setTimeout(checkReport,1500); document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') setTimeout(checkReport,800) }); loadPhotos().then(()=>{ if(S.photos.length) render(); if(!LOCAL_ONLY) initSync() });
 if(!CAP() && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
