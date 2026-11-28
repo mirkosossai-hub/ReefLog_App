@@ -1,6 +1,6 @@
 {
   "name": "reefnova",
-  "version": "1.15.2",
+  "version": "1.15.3",
   "private": true,
   "description": "ReefNova - gestione acquario marino",
   "dependencies": {

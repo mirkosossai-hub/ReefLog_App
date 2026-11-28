@@ -12,7 +12,7 @@
 :root{--bg:#07131c;--card:#0f2230;--card2:#14303f;--line:#1f4153;--tx:#e6f1f6;--mut:#8aa7b6;--acc:#2ec4d6;--ok:#3fcf8e;--warn:#f4b942;--bad:#ef5d5d;--ca:#5aa9ff;--kh:#f08c3a;--mg:#b07cf2}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,#07131c 70%,#07131c00);padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;display:flex;align-items:center;gap:10px}
+header{position:sticky;top:0;z-index:5;background:#07131c;box-shadow:0 10px 12px -8px #07131c;padding:calc(env(safe-area-inset-top) + 12px) 16px 10px;display:flex;align-items:center;gap:10px}
 header h1{font-size:19px;margin:0;font-weight:700;letter-spacing:.3px}
 header .sub{color:var(--mut);font-size:12px;margin-left:auto;text-align:right}
 main{padding:0 12px calc(88px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto}
@@ -438,11 +438,17 @@ function dueBadge(t){ const d=dueDiff(t);
   return `<span class="tag">${fdate(nextDue(t))} · tra ${d} gg</span>` }
 function taskEveryDays(t){ return t.kind==='interval'? Math.max(1,num(t.every)||7) : 30/Math.max(1,(t.days||[]).length) }
 function cadence(t){ return t.kind==='interval'? `ogni ${num(t.every)||7} giorni` : (LANG==='en'?`on day ${(t.days||[]).join(' and ')} of each month`:`il ${(t.days||[]).join(' e il ')} di ogni mese`) }
-function bacterMl(){ return (num(S.settings.bacterPer250)||5)*vol()/250 }
+const BACT_U=['ml','gocce','fiale','misurini','g','capsule'];
+// prodotti batterici: [{n:nome, q:dose, u:unità, per:litri (vuoto = dose fissa)}]; le vecchie impostazioni (nomi con + e ml ogni 250 L) si convertono da sole
+function bactList(){ const s=S.settings; if(Array.isArray(s.bacts)&&s.bacts.length) return s.bacts; const per=num(s.bacterPer250)??5; return String(s.bactName||'Bacter Mix + Bacter Nitrix').split('+').map(x=>x.trim()).filter(Boolean).map(n=>({n,q:per,u:'ml',per:250})) }
+function bactDose(b){ const q=num(b.q)||0, per=num(b.per); return per?q*vol()/per:q }
+function bactAmt(b,v){ const d=v??bactDose(b), u=b.u||'ml', SG={gocce:'goccia',fiale:'fiala',misurini:'misurino',capsule:'capsula'}; return `${fmt(d,d<10?1:0)} ${tx(Math.abs(d-1)<1e-9&&SG[u]?SG[u]:u)}` }
+function bacterMl(){ const b=bactList()[0]; return b?bactDose(b):0 }
 function startMode(){ return S.settings.startMode || (S.settings.startDate?'fixed':'none') }
 function bacterOn(){ return S.settings.bacterOn ?? (startMode()==='fixed') }
-function bactNames(){ return String(S.settings.bactName||'Bacter Mix + Bacter Nitrix').split('+').map(x=>x.trim()).filter(Boolean) }
-function bacterTxt(){ const m=bacterMl(); return bactNames().map(n=>`${n} ${fmt(m,1)} ml`).join(' + ') }
+function bactNames(){ return bactList().map(b=>b.n) }
+function bacterTxt(){ return bactList().map(b=>`${b.n} ${bactAmt(b)}`).join(' + ') }
+function bactRowH(b={}){ return `<div class="row bacR" style="flex-wrap:wrap;gap:6px;margin-bottom:10px;align-items:flex-end;padding-bottom:10px;border-bottom:1px solid var(--line)"><div class="f" style="flex:1 1 100%"><label>Prodotto</label><input class="bN" value="${esc(b.n||'')}" placeholder="es. Bio Digest"></div><div class="f" style="flex:1"><label>Dose</label><input class="bQ" inputmode="decimal" value="${b.q!=null?esc(String(b.q).replace('.',LANG==='it'?',':'.')):''}"></div><div class="f" style="flex:1.3"><label>Unità</label><select class="bU">${BACT_U.map(u=>`<option value="${u}" ${(b.u||'ml')===u?'selected':''}>${u}</option>`).join('')}</select></div><div class="f" style="flex:1"><label>ogni L</label><input class="bP" inputmode="decimal" placeholder="fissa" value="${b.per!=null&&b.per!==''?esc(String(b.per)):''}"></div><button type="button" class="btn sm sec bDel" style="flex:none">✕</button></div>` }
 const DEFAULT_TASKS=[
   {name:"Cambio acqua 10%",kind:'interval',every:7,wc:true},
   {name:"Test parametri",kind:'interval',every:7,auto:'test'},
@@ -1271,7 +1277,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.15.2';
+const APP_VERSION='1.15.3';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -2360,7 +2366,7 @@ function vManut(){
     if(doneOpen===t.id && t.wc){
       h+=`<form id="fDone" data-id="${t.id}" style="width:100%;margin-top:8px;background:var(--card2);padding:10px;border-radius:10px">
         <div class="row"><div class="f"><label>Litri cambiati</label><input name="liters" inputmode="decimal" value="${fmt(vol()*0.1,1)}"></div><div class="f"><label>Data</label><input type="datetime-local" name="ts" value="${toInput(Date.now())}"></div></div>
-        ${t.bacter?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="bact" checked style="width:auto;margin-right:6px">Aggiunti ${bacterTxt()}</label>`:''}
+        ${t.bacter?`<label class="small" style="display:block;margin-top:8px"><input type="checkbox" name="bact" checked style="width:auto;margin-right:6px">Aggiunti batteri</label><div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${bactList().map((b,i)=>`<div class="f" style="flex:1 1 40%"><label>${esc(b.n)} (${esc(tx(b.u||'ml'))})</label><input name="bq${i}" inputmode="decimal" value="${fmt(bactDose(b),2)}"></div>`).join('')}</div>`:''}
         <div class="row" style="margin-top:8px"><button class="btn sm" type="submit">Registra cambio</button><button class="btn sm sec" type="button" id="doneCancel">Annulla</button></div></form>`;
     }
     h+=`</div>`;
@@ -2431,7 +2437,7 @@ function vSet(){
     <div class="small mut" style="margin-top:4px" id="stHelp">${startMode()==='cycle'?'Il riquadro in Home si chiude da solo quando ammoniaca e nitriti risultano a zero in due test consecutivi.':startMode()==='fixed'?'Il riquadro in Home conta giorni e settimane sul totale indicato.':'Nessun riquadro di avvio in Home.'}</div>
     <hr>
     <label class="small" style="display:block"><input type="checkbox" name="bacterOn" id="bacOn" ${bacterOn()?'checked':''} style="width:auto;margin-right:6px">Reintegro batteri ai cambi d'acqua</label>
-    <div class="row ${bacterOn()?'':'hide'}" id="bacRow" style="margin-top:8px"><div class="f" style="flex:2"><label>Prodotti (separati da +)</label><input name="bactName" value="${esc(s.bactName||'Bacter Mix + Bacter Nitrix')}"></div><div class="f"><label>ml ogni 250 L</label><input name="bacterPer250" inputmode="decimal" value="${esc(String(s.bacterPer250??5).replace('.',','))}"></div></div>
+    <div class="${bacterOn()?'':'hide'}" id="bacRow" style="margin-top:10px"><div id="bacList">${bactList().map(bactRowH).join('')}</div><button type="button" class="btn sm sec" id="bacAdd">+ Aggiungi prodotto</button><div class="small mut" style="margin-top:6px">Per ogni prodotto: dose, unità e ogni quanti litri vale (es. 5 ml ogni 250 L, l'app la calcola sul tuo volume). Lascia vuoto "ogni L" per una dose fissa. Al momento del cambio puoi comunque correggere le quantità.</div></div>
     ${bacterOn()?`<div class="small mut" style="margin-top:4px">Con ${fmt(vol(),0)} L netti: ${bacterTxt()} a ogni cambio.</div>`:''}
     <hr>
     <div class="row"><div class="f"><label>Soglia TDS cambio resine (ppm)</label><input name="tdsMax" inputmode="decimal" value="${esc(String(s.tdsMax??3).replace('.',','))}"></div></div></div>
@@ -2742,7 +2748,7 @@ function bind(){
   const dc=document.getElementById('doneCancel'); if(dc) dc.onclick=()=>{ doneOpen=null; render() };
   const fDn=document.getElementById('fDone');
   if(fDn) fDn.onsubmit=async e=>{ e.preventDefault(); const o=formVals(fDn); const t=S.tasks.find(x=>x.id===fDn.dataset.id); const L=num(o.liters); if(!L){ toast('Indica i litri'); return }
-    const ts=fromInput(o.ts); const note='Cambio programmato'+(o.bact?' · '+bacterTxt():'');
+    const ts=fromInput(o.ts); const note='Cambio programmato'+(o.bact?' · '+bactList().map((b,i)=>`${b.n} ${bactAmt(b,num(o['bq'+i])??bactDose(b))}`).join(' + '):'');
     if(!await saveItem('events',{id:uid(),ts,type:'wc',liters:L,note})) return;
     if(t) await saveItem('tasks',Object.assign(clone(t),{lastDone:ts})); doneOpen=null; toast('Cambio registrato ✓'); render() };
   app.querySelectorAll('[data-etask]').forEach(b=>b.onclick=()=>{ editTask=clone(S.tasks.find(x=>x.id===b.dataset.etask)); render() });
@@ -2782,6 +2788,9 @@ function bind(){
     const sm=document.getElementById('stMode'); sm.onchange=()=>{ document.getElementById('stRow').classList.toggle('hide',sm.value==='none'); document.getElementById('stDays').classList.toggle('hide',sm.value!=='fixed');
       document.getElementById('stHelp').textContent= sm.value==='cycle'?'Il riquadro in Home si chiude da solo quando ammoniaca e nitriti risultano a zero in due test consecutivi.':sm.value==='fixed'?'Il riquadro in Home conta giorni e settimane sul totale indicato.':'Nessun riquadro di avvio in Home.' };
     const bo=document.getElementById('bacOn'); bo.onchange=()=>document.getElementById('bacRow').classList.toggle('hide',!bo.checked);
+    const bl=document.getElementById('bacList'), ba=document.getElementById('bacAdd');
+    if(ba) ba.onclick=()=>{ bl.insertAdjacentHTML('beforeend',bactRowH({u:'ml'})); const r=bl.lastElementChild; r&&r.querySelector('.bN').focus() };
+    if(bl) bl.onclick=e=>{ const d=e.target.closest('.bDel'); if(d) d.closest('.bacR').remove() };
     document.getElementById('calcRecipe').onclick=()=>{
       const g=id=>num(document.getElementById(id).value)||0;
       const ca=g('r_ca')*0.2726, kh=g('r_hco3')*11.90/1000+g('r_co3')*18.87/1000, mg=g('r_mgcl')*0.1196+g('r_mgso')*0.0986;
@@ -2795,7 +2804,7 @@ function bind(){
       s.salt={ca:num(o.s_ca)??'',kh:num(o.s_kh)??'',mg:num(o.s_mg)??''};
       s.aio={ca:num(o.a_ca)??'',kh:num(o.a_kh)??'',mg:num(o.a_mg)??''};
       s.aioProd=o.aioProd||''; s.aioBrand=(o.aioBrand||'').trim(); s.aioName=(o.aioName||'').trim(); s.ballProd=o.ballProd||''; s.ballBrand=(o.ballBrand||'').trim(); s.ballName=(o.ballName||'').trim();
-      s.startMode=o.startMode||'none'; s.startDate=o.startDate||''; s.startDays=Math.max(1,Math.round(num(o.startDays)||28)); s.bacterOn=!!o.bacterOn; s.bactName=(o.bactName||'').trim()||'Bacter Mix + Bacter Nitrix'; s.bacterPer250=num(o.bacterPer250)??5; s.tdsMax=num(o.tdsMax)??3;
+      s.startMode=o.startMode||'none'; s.startDate=o.startDate||''; s.startDays=Math.max(1,Math.round(num(o.startDays)||28)); s.bacterOn=!!o.bacterOn; { const rows=[...document.querySelectorAll('#bacList .bacR')]; if(rows.length||document.getElementById('bacList')){ s.bacts=rows.map(r=>({n:r.querySelector('.bN').value.trim(),q:num(r.querySelector('.bQ').value),u:r.querySelector('.bU').value||'ml',per:num(r.querySelector('.bP').value)})).filter(b=>b.n&&b.q!=null); if(s.bacts.length) s.bactName=s.bacts.map(b=>b.n).join(' + ') } } s.tdsMax=num(o.tdsMax)??3;
       if(s.startMode!=='none'&&!s.startDate){ toast('Indica la data di avvio'); return }
       s.targets={}; s.showParams=[];
       for(const p of Object.keys(P)){ const lo=num(o['lo_'+p]),hi=num(o['hi_'+p]); if(lo!=null&&hi!=null) s.targets[p]=[Math.min(lo,hi),Math.max(lo,hi)]; if(o['show_'+p]) s.showParams.push(p) }
