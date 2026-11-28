@@ -363,6 +363,8 @@ function aioEff(p){ // AIO: "1 ml in 100 L alza di X" → X·100 (unità·L per 
 function effPerMl(p){ return isAIO()? aioEff(p) : ballEff(p) }
 function testsWith(p){ return S.tests.filter(t=>num(t.v?.[p])!=null).sort(byTs) }
 function regimens(){ return [...S.doses].sort(byTs) }
+function p4Name(){ return String(S.settings.p4Name||'').trim() }
+function p4On(){ return !!p4Name()&&!isAIO()&&!isReactor() }
 function curReg(ts){ let r=null; for(const d of regimens()){ if(d.ts<=ts) r=d; else break } return r }
 // ml/g del prodotto che fornisce p secondo la modalità attuale
 function rateAt(p,ts){ const r=curReg(ts); if(!r) return 0; if(isAIO()) return r.kind==='aio'?(num(r.aio)||0):0; if(isReactor()) return r.kind==='reactor'?(num(r.flow)||0):0; return (r.kind==='aio'||r.kind==='reactor')?0:(num(r[p])||0) }
@@ -694,7 +696,7 @@ function aiExportText(days){
   const m=dmode(), reg=curReg(now), pl=k=>productLabel(k)?' ('+productLabel(k)+')':'';
   if(m==='aio') o.push(`- ${L('Dosaggio','Dosing')}: All In One${pl('aio')}, ${fmt(rateAt('kh',now),1)} ${L('ml al giorno','ml per day')}. ${L('1 ml in 100 L alza','1 ml in 100 L raises')} Ca ${st.aio?.ca||'?'} ppm, KH ${st.aio?.kh||'?'} dKH, Mg ${st.aio?.mg||'?'} ppm`);
   else if(m==='reactor') o.push(`- ${L('Dosaggio','Dosing')}: ${L('reattore di calcio','calcium reactor')}${reg&&reg.kind==='reactor'?`, ${L('portata','flow')} ${reg.flow} ml/min, ${L('KH effluente','effluent KH')} ${reg.effKH} dKH${reg.effCa!=null?`, ${L('Ca effluente','effluent Ca')} ${reg.effCa} ppm`:''}${reg.mg?`, Mg ${reg.mg} ${L('ml al giorno','ml per day')}`:''}`:''}`);
-  else o.push(`- ${L('Dosaggio','Dosing')}: Balling ${L('3 parti','3-part')}${pl('balling')}, Ca ${fmt(rateAt('ca',now),1)} ml, KH ${fmt(rateAt('kh',now),1)} ml, Mg ${fmt(rateAt('mg',now),1)} ml ${L('al giorno','per day')}${st.conc&&(st.conc.ca||st.conc.kh||st.conc.mg)?`. ${L('Concentrazioni','Concentrations')}: Ca ${st.conc.ca||'?'} mg/ml, KH ${st.conc.kh||'?'} meq/ml, Mg ${st.conc.mg||'?'} mg/ml`:''}`);
+  else o.push(`- ${L('Dosaggio','Dosing')}: Balling ${L('3 parti','3-part')}${pl('balling')}, Ca ${fmt(rateAt('ca',now),1)} ml, KH ${fmt(rateAt('kh',now),1)} ml, Mg ${fmt(rateAt('mg',now),1)} ml ${L('al giorno','per day')}${p4On()&&num((curReg(now)||{}).p4)?`, ${p4Name()} ${fmt(num(curReg(now).p4),1)} ml ${L('(quarta parte, senza Ca/KH/Mg)','(fourth part, no Ca/KH/Mg)')}`:''}${st.conc&&(st.conc.ca||st.conc.kh||st.conc.mg)?`. ${L('Concentrazioni','Concentrations')}: Ca ${st.conc.ca||'?'} mg/ml, KH ${st.conc.kh||'?'} meq/ml, Mg ${st.conc.mg||'?'} mg/ml`:''}`);
   H(L('Ultimi valori e range obiettivo','Latest values and target ranges'));
   const lv=Object.keys(P).map(p=>[p,lastVal(p)]).filter(([,l])=>l);
   if(lv.length){ o.push(`| ${L('Parametro','Parameter')} | ${L('Valore','Value')} | ${L('Data','Date')} | ${L('Range obiettivo','Target range')} |`,'|---|---|---|---|');
@@ -770,7 +772,7 @@ async function buildPDF(days){
   const si=startInfo(), m=dmode(), reg=curReg(now);
   line(`Volume netto: ${volSet()?vol()+' L':'non impostato'}`);
   if(si) line(si.mode==='fixed'?`Avvio: giorno ${si.day} di ${si.tot}`:`Maturazione: giorno ${si.day}${si.done?' (ciclo concluso)':''}`);
-  line(m==='aio'?`Dosaggio: All In One${productLabel('aio')?' '+productLabel('aio'):''}, ${fmt(rateAt('kh',now),1)} ml/giorno`: m==='reactor'?`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${fmt(num(reg.flow),1)} ml/min, KH effluente ${fmt(num(reg.effKH),1)}`:''}`:`Dosaggio: Balling${productLabel('balling')?' '+productLabel('balling'):''} - Ca ${fmt(rateAt('ca',now),1)}, KH ${fmt(rateAt('kh',now),1)}, Mg ${fmt(rateAt('mg',now),1)} ml/giorno`);
+  line(m==='aio'?`Dosaggio: All In One${productLabel('aio')?' '+productLabel('aio'):''}, ${fmt(rateAt('kh',now),1)} ml/giorno`: m==='reactor'?`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${fmt(num(reg.flow),1)} ml/min, KH effluente ${fmt(num(reg.effKH),1)}`:''}`:`Dosaggio: Balling${productLabel('balling')?' '+productLabel('balling'):''} - Ca ${fmt(rateAt('ca',now),1)}, KH ${fmt(rateAt('kh',now),1)}, Mg ${fmt(rateAt('mg',now),1)} ml/giorno${p4On()&&num((curReg(now)||{}).p4)?`, ${p4Name()} ${fmt(num(curReg(now).p4),1)} ml/giorno`:''}`);
   y+=3; h1('Ultimi valori');
   doc.setFont('helvetica','bold'); doc.text('Parametro',M,y); doc.text('Valore',M+55,y); doc.text('Data',M+90,y); doc.text('Range',M+120,y); doc.text('Stato',M+155,y); y+=2; doc.setDrawColor(200); doc.line(M,y,W-M,y); y+=5; doc.setFont('helvetica','normal');
   for(const p of Object.keys(P)){ const l=lastVal(p); if(!l) continue; page(); const [lo,hi]=tgt(p), st=status(p,l.v);
@@ -912,7 +914,8 @@ function widgetPush(){
 
 /* ---------- Eventi sui grafici: tacche con cambi d'acqua, dosi, inserimenti, manutenzioni ---------- */
 function chartEvOn(){ return lsGet('reeflog.chartEv')!=='0' }
-function doseTxt(d){ return d.kind==='aio'?`All In One ${fmt(num(d.aio)||0,1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow)||0,1)} ml/min`:`Ca ${fmt(num(d.ca)||0,1)} · KH ${fmt(num(d.kh)||0,1)} · Mg ${fmt(num(d.mg)||0,1)} ml/g` }
+function doseTxt(d){ return doseTxt0(d)+(d.kind==='balling'&&num(d.p4)?` · ${d.p4n||p4Name()||'4ª parte'} ${fmt(num(d.p4),1)} ml/g`:'') }
+function doseTxt0(d){ return d.kind==='aio'?`All In One ${fmt(num(d.aio)||0,1)} ml/g`:d.kind==='reactor'?`reattore ${fmt(num(d.flow)||0,1)} ml/min`:`Ca ${fmt(num(d.ca)||0,1)} · KH ${fmt(num(d.kh)||0,1)} · Mg ${fmt(num(d.mg)||0,1)} ml/g` }
 function chartEvents(from,to){
   if(!chartEvOn()) return [];
   const out=[], inR=ts=>ts>=from&&ts<=to;
@@ -1133,13 +1136,13 @@ function bindICP(){
 }
 
 /* ---------- Scorte e consumabili ---------- */
-const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
+const STOCK_T={aio:['All In One','ml'],ca:['Balling Calcio','ml'],kh:['Balling KH','ml'],mg:['Balling Magnesio','ml'],p4:['Balling 4ª parte','ml'],salt:['Sale','kg'],reagent:['Reagente test','test'],other:['Altro','pz']};
 const STOCK_UNITS=['pz','ml','L','g','kg','mg'];
 function stU(it){ return it.type==='other'?(STOCK_UNITS.includes(it.unit)?it.unit:'pz'):(STOCK_T[it.type]||STOCK_T.other)[1] }
 let stockEdit=null;
 function stockUsed(it,t1,t2){
   if(t2<=t1) return 0; let u=0;
-  if(it.type==='aio'||['ca','kh','mg'].includes(it.type)){
+  if(it.type==='aio'||['ca','kh','mg','p4'].includes(it.type)){
     const R=regimens();
     for(let i=0;i<R.length;i++){ const s=R[i].ts, e=i+1<R.length?R[i+1].ts:Infinity, ov=Math.min(e,t2)-Math.max(s,t1); if(ov<=0) continue;
       const r=R[i]; const ml= it.type==='aio' ? (r.kind==='aio'?num(r.aio)||0:0) : (r.kind==='balling'||!r.kind ? num(r[it.type])||0 : (r.kind==='reactor'&&it.type==='mg'?num(r.mg)||0:0)); u+=ml*ov/DAY }
@@ -1156,7 +1159,7 @@ function stockInfo(it){
   const now=Date.now(), used=stockUsed(it,it.setTs||now,now), rem=Math.max(0,(num(it.qty)||0)-used);
   // ritmo di consumo: storico degli ultimi 30 giorni (o dall'inizio dei dati, se più recente)
   const first=Math.min(...[...S.tests,...S.events,...S.doses].map(x=>x.ts).filter(Boolean),now), from=Math.max(now-30*DAY,first), span=(now-from)/DAY; let rate=span>=3?stockUsed(it,from,now)/span:0;
-  if(!rate&&['aio','ca','kh','mg'].includes(it.type)){ const r=curReg(now); if(r) rate= it.type==='aio'?(r.kind==='aio'?num(r.aio)||0:0):(r.kind!=='aio'&&r.kind!=='reactor'?num(r[it.type])||0:0) }
+  if(['aio','ca','kh','mg','p4'].includes(it.type)){ const r=curReg(now); let cr=0; if(r) cr=it.type==='aio'?(r.kind==='aio'?num(r.aio)||0:0):(r.kind!=='aio'&&r.kind!=='reactor'?num(r[it.type])||0:0); if(cr>0) rate=cr; }
   if(!rate&&it.type==='other'&&it.task&&num(it.per)){ const tk=S.tasks.find(x=>x.id===it.task); if(tk) rate=num(it.per)/taskEveryDays(tk) }
   const days= rate>0? rem/rate : null;
   const exp=num(it.expiry), expDays= exp? Math.floor((exp-now)/DAY) : null;
@@ -1277,7 +1280,7 @@ function bindStockGear(){
 }
 
 /* ---------- Assistente AI (Pro) ---------- */
-const APP_VERSION='1.15.3';
+const APP_VERSION='1.15.4';
 // Fornitori: oggi Claude; la struttura (formato messaggi interno, aiCall) permette di aggiungerne altri
 const AI_PROVIDERS={
   anthropic:{name:'Claude (Anthropic)',model:'claude-haiku-5-5',price:[0.10,0.50]},
@@ -1332,7 +1335,7 @@ function aiOverview(){
   const m=dmode();
   if(m==='aio') o.push(`Dosaggio: All In One${productLabel('aio')?' ('+productLabel('aio')+')':''}, ${fmt(rateAt('kh',now),1)} ml/giorno. 1 ml in 100 L alza: Ca ${s.aio?.ca||'?'} ppm, KH ${s.aio?.kh||'?'} dKH, Mg ${s.aio?.mg||'?'} ppm.`);
   else if(m==='reactor') o.push(`Dosaggio: reattore di calcio${reg&&reg.kind==='reactor'?`, portata ${reg.flow} ml/min, KH effluente ${reg.effKH}${reg.effCa!=null?', Ca effluente '+reg.effCa:''}${reg.mg?', Mg integrato '+reg.mg+' ml/g':''}`:' (nessuna regolazione registrata)'}.`);
-  else o.push(`Dosaggio: Balling 3 parti, Ca ${rateAt('ca',now)} ml/g, KH ${rateAt('kh',now)} ml/g, Mg ${rateAt('mg',now)} ml/g.`);
+  else o.push(`Dosaggio: Balling 3 parti, Ca ${rateAt('ca',now)} ml/g, KH ${rateAt('kh',now)} ml/g, Mg ${rateAt('mg',now)} ml/g${p4On()&&num((curReg(now)||{}).p4)?`, ${p4Name()} ${num(curReg(now).p4)} ml/g (quarta parte, non contiene Ca/KH/Mg)`:''}.`);
   const vals=[]; for(const p of Object.keys(P)){ const l=lastVal(p); if(l){ const [lo,hi]=tgt(p); vals.push(`${P[p].n} ${fmt(l.v,P[p].d)}${P[p].u?' '+P[p].u:''} (${new Date(l.ts).toLocaleDateString(LOC)}, range ${lo}–${hi})`) } }
   o.push(vals.length?'Ultimi valori: '+vals.join('; ')+'.':'Nessun test registrato.');
   const cons=TRI.map(p=>{ const c=avgCons(p); return c!=null?`${P[p].n} ${fmt(c,p==='kh'?2:1)} ${P[p].u}/g`:null }).filter(Boolean);
@@ -1600,7 +1603,7 @@ const GUIDE=[
   <p>Per avere calcoli corretti apri <b>Menu → Impostazioni</b> e imposta:</p>
   <ol><li><b>Volume netto</b>: l'acqua reale di vasca e sump, tolte rocce e sabbia. Da questo numero dipendono consumi, dosi e batteri.</li>
   <li><b>Avvio / maturazione</b>: scegli il protocollo di avvio, oppure "Nessuno" se la vasca è già matura (vedi <a data-g="avvio">Avvio e maturazione</a>).</li>
-  <li><b>Prodotto per la triade</b>: Balling 3 parti o All In One, con i dati dell'etichetta (vedi <a data-g="triade">Triade e dosaggio</a>).</li>
+  <li><b>Prodotto per la triade</b>: Balling 3 parti, All In One o reattore di calcio, con i dati dell'etichetta o le regolazioni del reattore (vedi <a data-g="triade">Triade e dosaggio</a>).</li>
   <li><b>Range obiettivo</b>: i valori ideali di ogni parametro, che colorano i risultati in verde, giallo o rosso. Con la spunta scegli quali parametri vedere in Home.</li></ol>
   <p>Poi inserisci il primo test con il pulsante <b>＋</b> in basso.</p>`},
  {id:'navigazione',i:'🧭',t:'Come muoversi',b:`<ul><li><b>Home</b>: riassunto della vasca, cioè avvio, cose da fare, ultimi valori e triade.</li>
@@ -1621,7 +1624,7 @@ const GUIDE=[
   <p>In <b>Grafici</b> c'è un grafico per ogni parametro spuntato in Impostazioni, con la fascia verde del range. I pulsanti in alto cambiano il periodo. In fondo ci sono i consumi della triade e la storia delle dosi.</p>`},
  {id:'triade',i:'💧',t:'Triade e dosaggio',b:`<p>In <b>Impostazioni</b>, nei riquadri All In One e Balling, puoi scegliere il <b>prodotto dal catalogo</b>: i valori si compilano da soli, con la fonte indicata. Se il tuo prodotto non c'è, scegli <b>Altro</b>, scrivi marca e nome e inserisci i valori dell'etichetta.</p>
   <p>In <b>Menu → Dosaggio</b> scegli il metodo:</p>
-  <ul><li><b>Balling 3 parti</b>: tre soluzioni separate. In Impostazioni inserisci la concentrazione di ognuna (mg/ml per Ca e Mg, meq/ml per il KH), oppure calcolala dalla ricetta in grammi per litro.</li>
+  <ul><li><b>Balling 3 parti</b>: tre soluzioni separate. In Impostazioni inserisci la concentrazione di ognuna (mg/ml per Ca e Mg, meq/ml per il KH), oppure calcolala dalla ricetta in grammi per litro. Se doserai una quarta soluzione (oligoelementi o sale senza NaCl), scrivine il nome in <b>Quarta parte</b>: la registri insieme alle altre, ma non entra nei calcoli della triade.</li>
   <li><b>All In One</b>: un unico prodotto che apporta calcio, KH e magnesio insieme, in proporzioni fisse. Si regola <b>una sola dose</b>. In Impostazioni inserisci di quanto alza <b>1 ml in 100 L</b> ciascun elemento; se l'etichetta parla di 10 ml, dividi per 10. In Home vedi, per ogni elemento, consumo, apporto della dose attuale e bilancio (in equilibrio, in accumulo o in calo).</li>
   <li><b>Reattore di calcio</b>: registra la <b>portata</b> dell'effluente (ml/min) e il suo <b>KH</b>, e se lo misuri anche il calcio. L'apporto si calcola come portata × (valore dell'effluente − valore in vasca); se il calcio non è misurato si stima dal KH. Il magnesio integrato a parte usa la soluzione Mg delle Impostazioni. In Home trovi la <b>portata consigliata</b> per coprire il consumo di KH.</li></ul>
   <p><b>Registra ogni variazione</b> della dose giornaliera con "Imposta nuova dose": l'app calcola quanto hai dosato nel tempo. Le aggiunte una tantum si registrano invece come "Dose manuale" con il ＋.</p>
@@ -1631,7 +1634,7 @@ const GUIDE=[
   <p><b>Rapporto Ca/KH</b>: in una vasca che consuma per calcificazione è vicino a 7. Valori molto diversi possono indicare un test impreciso o delle precipitazioni.</p>`},
  {id:'cambi',i:'🔄',t:'Cambi d\'acqua',b:`<p>Registra i cambi dal ＋ → <b>Cambio acqua</b>. Se hai una scadenza "cambio d'acqua", si apre direttamente con litri e batteri già calcolati.</p>
   <p>In <b>Impostazioni → Acqua del cambio</b> puoi inserire i valori di Ca, KH e Mg dell'acqua nuova. Così l'app sottrae l'effetto dei cambi dai consumi e i calcoli sono più precisi.</p>
-  <p>Se il tuo metodo prevede batteri ai cambi, attiva "Reintegro batteri" in Impostazioni: la dose viene calcolata sul tuo volume.</p>`},
+  <p>Se il tuo metodo prevede batteri ai cambi, attiva "Reintegro batteri" in Impostazioni e indica per ogni prodotto dose, unità e ogni quanti litri vale: l'app la calcola sul tuo volume. Lasciando vuoto "ogni L" la dose è fissa. Al momento del cambio puoi comunque correggere le quantità.</p>`},
  {id:'manut',i:'🔧',t:'Manutenzione e scadenze',b:`<p>In <b>Menu → Manutenzione</b> crei le scadenze ricorrenti:</p>
   <ul><li><b>Ogni N giorni</b>, per esempio test ogni 7 giorni;</li><li><b>Giorni fissi del mese</b>, per esempio il 15 e il 30. Nei mesi più corti vale l'ultimo giorno.</li></ul>
   <p>Premi <b>Fatto</b> quando hai finito: la prossima data si ricalcola da lì e la cosa resta nel diario. Le scadenze collegate ai test o al TDS si spuntano da sole quando salvi una misura.</p>
@@ -1688,7 +1691,7 @@ const GUIDE=[
   <p>Il widget mostra gli ultimi valori di KH, calcio, magnesio, fosfati, nitrati, nitriti e ammoniaca (verdi se nel range, gialli o rossi se no; «–» se non li hai ancora misurati), da quanto non fai un test e la prossima manutenzione. Si aggiorna quando usi l'app e ogni mezz'ora; toccandolo apri ReefNova.</p>`},
  {id:'vasche',i:'🐠',t:'Più vasche (Pro)',b:`<p>Con il piano Pro puoi gestire <b>più vasche</b>, per esempio la principale, una quarantena o un nano. Tocca il <b>nome della vasca</b> in alto a sinistra per passare da una all'altra, aggiungerne una nuova, rinominarla (✎) o eliminarla (🗑, due tocchi).</p>
   <p>Ogni vasca ha i suoi dati: test, dosaggio, scadenze, animali, foto, impostazioni e conversazione con l'assistente. Le <b>notifiche</b> arrivano per tutte le vasche, con il nome della vasca nel titolo.</p>
-  <p>Il <b>backup</b> esporta la vasca aperta in quel momento; per salvarle tutte esportale una alla volta. La vasca principale non si può eliminare.</p>`},
+  <p>Il backup su Google Drive salva tutte le vasche insieme; l'esportazione JSON riguarda invece la vasca aperta in quel momento. La vasca principale non si può eliminare.</p>`},
  {id:'faq',i:'❓',t:'Domande frequenti',b:`<p><b>Il consumo mostra "–".</b> Servono almeno due test dello stesso parametro e la concentrazione del prodotto inserita in Impostazioni.</p>
   <p><b>Il consumo sembra sbagliato.</b> Controlla il volume netto, di aver registrato ogni cambio di dose e i cambi d'acqua, e i dati del prodotto. I test fatti a poche ore di distanza amplificano gli errori del kit: meglio almeno un giorno di distanza.</p>
   <p><b>Ho sbagliato un test.</b> Parametri → Storico → ✎.</p>
@@ -2321,7 +2324,7 @@ function vDosi(){
     <div class="row">${mode==='aio'?`<div class="f"><label>All In One ml/g</label><input name="aio" inputmode="decimal" value="${String(cur.kh).replace('.',',')}"></div>`
       :mode==='reactor'?`<div class="f"><label>Portata ml/min</label><input name="flow" inputmode="decimal" value="${rr.flow!=null?String(rr.flow).replace('.',','):''}"></div><div class="f"><label>KH effluente</label><input name="effKH" inputmode="decimal" value="${rr.effKH!=null?String(rr.effKH).replace('.',','):''}"></div></div>
         <div class="row" style="margin-top:8px"><div class="f"><label>Ca effluente (facolt.)</label><input name="effCa" inputmode="decimal" value="${rr.effCa!=null?String(rr.effCa).replace('.',','):''}"></div><div class="f"><label>Mg integrato ml/g (facolt.)</label><input name="mg" inputmode="decimal" value="${rr.mg?String(rr.mg).replace('.',','):''}"></div>`
-      :TRI.map(p=>`<div class="f"><label>${P[p].n} ml/g</label><input name="${p}" inputmode="decimal" value="${String(cur[p]).replace('.',',')}"></div>`).join('')}</div>
+      :TRI.map(p=>`<div class="f"><label>${P[p].n} ml/g</label><input name="${p}" inputmode="decimal" value="${String(cur[p]).replace('.',',')}"></div>`).join('')+(p4On()?`</div><div class="row" style="margin-top:8px"><div class="f"><label>${esc(p4Name())} ml/g</label><input name="p4" inputmode="decimal" value="${String(num(reg&&reg.p4)||0).replace('.',',')}"></div>`:'')}</div>
     <div class="f" style="margin-top:8px"><label>Nota</label><input name="note" placeholder="${mode==='reactor'?'es. aumentata la CO₂':'es. aumento KH dopo calo'}"></div>
     <div class="row" style="margin-top:10px"><button class="btn" type="submit">Salva</button></div>
     <div class="small mut" style="margin-top:6px">${mode==='reactor'?'Registra ogni modifica di portata e ogni nuova misura del KH dell\'effluente: l\'app calcola l\'apporto nel tempo. Il magnesio integrato usa la concentrazione della soluzione Mg in Impostazioni.':'Registra ogni variazione della pompa dosometrica: l\'app integra le dosi nel tempo per calcolare i consumi. Le dosi manuali una tantum vanno nel Diario.'}</div>
@@ -2329,7 +2332,7 @@ function vDosi(){
   h+=`<div class="card"><h2>Storico variazioni</h2><div class="list">`;
   const R=[...S.doses].sort((a,b)=>b.ts-a.ts);
   if(!R.length) h+=`<p class="mut">Nessuna dose registrata.</p>`;
-  for(const d of R) h+=`<div class="it"><div class="when">${fdate(d.ts,true)}</div><div class="body">${d.kind==='reactor'?`<span class="tag">Reattore</span> <b>${fmt(num(d.flow)||0,1)} ml/min</b> · KH ${d.effKH!=null?fmt(num(d.effKH),1):'–'}${d.effCa!=null?' · Ca '+fmt(num(d.effCa),0):''}${num(d.mg)?' · Mg '+fmt(num(d.mg),1)+' ml':''}`:d.kind==='aio'?`<span class="tag">AIO</span> <b>${fmt(num(d.aio)||0,1)} ml</b>`:TRI.map(p=>`<span style="margin-right:10px"><span class="dot" style="background:${TRI_COL[p]}"></span>${fmt(num(d[p])||0,1)} ml</span>`).join('')}${d.note?`<div class="mut small">${esc(d.note)}</div>`:''}</div><div class="acts">${delBtn('doses',d.id)}</div></div>`;
+  for(const d of R) h+=`<div class="it"><div class="when">${fdate(d.ts,true)}</div><div class="body">${d.kind==='reactor'?`<span class="tag">Reattore</span> <b>${fmt(num(d.flow)||0,1)} ml/min</b> · KH ${d.effKH!=null?fmt(num(d.effKH),1):'–'}${d.effCa!=null?' · Ca '+fmt(num(d.effCa),0):''}${num(d.mg)?' · Mg '+fmt(num(d.mg),1)+' ml':''}`:d.kind==='aio'?`<span class="tag">AIO</span> <b>${fmt(num(d.aio)||0,1)} ml</b>`:TRI.map(p=>`<span style="margin-right:10px"><span class="dot" style="background:${TRI_COL[p]}"></span>${fmt(num(d[p])||0,1)} ml</span>`).join('')+(num(d.p4)?`<span style="margin-right:10px">${esc(d.p4n||p4Name()||'4ª parte')} <b>${fmt(num(d.p4),1)} ml</b></span>`:'')}${d.note?`<div class="mut small">${esc(d.note)}</div>`:''}</div><div class="acts">${delBtn('doses',d.id)}</div></div>`;
   h+=`</div></div>`;
   // tabella intervalli
   h+=`<div class="card"><h2>Bilancio tra test</h2>`;
@@ -2457,6 +2460,8 @@ function vSet(){
       <div class="f"><label>KH: meq per ml</label><input name="c_kh" inputmode="decimal" value="${esc(String(s.conc.kh??'').replace('.',','))}"></div>
       <div class="f"><label>Magnesio: mg Mg per ml</label><input name="c_mg" inputmode="decimal" value="${esc(String(s.conc.mg??'').replace('.',','))}"></div>
     </div>
+    <div class="f" style="margin-top:10px"><label>Quarta parte (facoltativa)</label><input name="p4Name" value="${esc(s.p4Name||'')}" placeholder="es. Oligoelementi o sale senza NaCl"></div>
+    <div class="small mut" style="margin:4px 0 8px">Per chi dosa una quarta soluzione con la pompa. Scrivi il nome e la troverai in Dosaggio: va nello storico delle dosi e nelle Scorte, ma non entra nei calcoli di calcio, KH e magnesio.</div>
     <details><summary>Calcola dalla ricetta (g di sale per litro)</summary>
       <div class="row" style="margin-top:6px">
         <div class="f"><label>CaCl₂·2H₂O g/L</label><input id="r_ca" inputmode="decimal" placeholder="71,5"></div>
@@ -2724,7 +2729,7 @@ function bind(){
       ? {id:uid(),ts:fromInput(o.ts),kind:'reactor',flow:num(o.flow)||0,effKH:num(o.effKH),effCa:num(o.effCa),mg:num(o.mg)||0,note:(o.note||'').trim()}
       : isAIO()
       ? {id:uid(),ts:fromInput(o.ts),kind:'aio',aio:num(o.aio)||0,note:(o.note||'').trim()}
-      : {id:uid(),ts:fromInput(o.ts),kind:'balling',ca:num(o.ca)||0,kh:num(o.kh)||0,mg:num(o.mg)||0,note:(o.note||'').trim()};
+      : Object.assign({id:uid(),ts:fromInput(o.ts),kind:'balling',ca:num(o.ca)||0,kh:num(o.kh)||0,mg:num(o.mg)||0,note:(o.note||'').trim()},p4On()?{p4:num(o.p4)||0,p4n:p4Name()}:{});
     if(await saveItem('doses',item)){ toast('Dose salvata'); render() } };
 
   const ap=document.getElementById('addPhoto')||document.getElementById('homeAddPhoto'); if(ap) ap.onclick=()=>document.getElementById('photoIn').click();
@@ -2803,7 +2808,7 @@ function bind(){
       s.conc={ca:num(o.c_ca)??'',kh:num(o.c_kh)??'',mg:num(o.c_mg)??''};
       s.salt={ca:num(o.s_ca)??'',kh:num(o.s_kh)??'',mg:num(o.s_mg)??''};
       s.aio={ca:num(o.a_ca)??'',kh:num(o.a_kh)??'',mg:num(o.a_mg)??''};
-      s.aioProd=o.aioProd||''; s.aioBrand=(o.aioBrand||'').trim(); s.aioName=(o.aioName||'').trim(); s.ballProd=o.ballProd||''; s.ballBrand=(o.ballBrand||'').trim(); s.ballName=(o.ballName||'').trim();
+      s.aioProd=o.aioProd||''; s.aioBrand=(o.aioBrand||'').trim(); s.aioName=(o.aioName||'').trim(); s.ballProd=o.ballProd||''; s.p4Name=(o.p4Name||'').trim(); s.ballBrand=(o.ballBrand||'').trim(); s.ballName=(o.ballName||'').trim();
       s.startMode=o.startMode||'none'; s.startDate=o.startDate||''; s.startDays=Math.max(1,Math.round(num(o.startDays)||28)); s.bacterOn=!!o.bacterOn; { const rows=[...document.querySelectorAll('#bacList .bacR')]; if(rows.length||document.getElementById('bacList')){ s.bacts=rows.map(r=>({n:r.querySelector('.bN').value.trim(),q:num(r.querySelector('.bQ').value),u:r.querySelector('.bU').value||'ml',per:num(r.querySelector('.bP').value)})).filter(b=>b.n&&b.q!=null); if(s.bacts.length) s.bactName=s.bacts.map(b=>b.n).join(' + ') } } s.tdsMax=num(o.tdsMax)??3;
       if(s.startMode!=='none'&&!s.startDate){ toast('Indica la data di avvio'); return }
       s.targets={}; s.showParams=[];
